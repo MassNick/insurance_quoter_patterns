@@ -1,0 +1,32 @@
+name: Azure sign-in
+description: OIDC sign-in (no secret) and the ARM_* variables Terraform reads. The job needs permissions id-token write and an environment whose federated credential matches.
+inputs:
+  client-id:
+    description: App registration or managed identity with a federated credential for this GitHub environment
+    required: true
+  tenant-id:
+    description: Entra tenant id
+    required: true
+  subscription-id:
+    description: Subscription of the environment
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
+    - shell: bash
+      env:
+        CLIENT_ID: ${{ inputs.client-id }}
+        TENANT_ID: ${{ inputs.tenant-id }}
+        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      run: |
+        {
+          echo "ARM_USE_OIDC=true"
+          echo "ARM_CLIENT_ID=$CLIENT_ID"
+          echo "ARM_TENANT_ID=$TENANT_ID"
+          echo "ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID"
+        } >> "$GITHUB_ENV"

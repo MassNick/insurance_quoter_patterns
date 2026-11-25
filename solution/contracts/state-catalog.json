@@ -1,0 +1,1605 @@
+{
+  "$comment": "Single source of truth for quote-session state. Drives the memory agent's output schema, the A2UI form compiler (widget + validation per key), the BFF deterministic-field policy, the side panel, and the demos. Paths are JSON Pointers into the session state document; A2UI data bindings use the same pointers.",
+  "version": "1.0.0",
+  "market": {
+    "country": "CA",
+    "home_province": "QC",
+    "currency": "CAD",
+    "distance_unit": "km",
+    "languages": [
+      "en",
+      "fr"
+    ]
+  },
+  "entities": {
+    "quote": {
+      "label": "Quote, policyholder, contact",
+      "cardinality": "one",
+      "path": "/quote"
+    },
+    "vehicle": {
+      "label": "Vehicle",
+      "cardinality": "many",
+      "path": "/vehicles",
+      "max": 25
+    },
+    "driver": {
+      "label": "Driver",
+      "cardinality": "many",
+      "path": "/drivers",
+      "max": 10
+    },
+    "underwriting": {
+      "label": "Underwriting / other quote details",
+      "cardinality": "one",
+      "path": "/underwriting"
+    },
+    "household": {
+      "label": "Household assignments",
+      "cardinality": "one",
+      "path": "/household"
+    }
+  },
+  "deterministic_policy": {
+    "$comment": "A deterministic field never changes silently. When its value changes in the BFF (from chat via the memory agent, from a form, or from a document), the BFF holds the change as pending and emits confirm.required. The change is committed only after a two-step confirmation in the frontend.",
+    "confirmation": "double",
+    "pending_ttl_seconds": 900
+  },
+  "fields": [
+    {
+      "key": "quote_goal",
+      "entity": "quote",
+      "type": "enum",
+      "label": "What you want to do",
+      "label_fr": "Objectif de la soumission",
+      "help_fr": "Nous adaptons nos questions à ce que vous souhaitez faire.",
+      "enum": [
+        [
+          "new_quote",
+          "Get a new quote"
+        ],
+        [
+          "compare_current",
+          "Compare with my current insurer"
+        ],
+        [
+          "add_vehicle",
+          "Add a vehicle to a policy"
+        ],
+        [
+          "renewal_review",
+          "Review my renewal"
+        ],
+        [
+          "info_only",
+          "Just looking for information"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "new_quote",
+          "Obtenir une nouvelle soumission"
+        ],
+        [
+          "compare_current",
+          "Comparer avec mon assureur actuel"
+        ],
+        [
+          "add_vehicle",
+          "Ajouter un véhicule à une police"
+        ],
+        [
+          "renewal_review",
+          "Revoir mon renouvellement"
+        ],
+        [
+          "info_only",
+          "Me renseigner seulement"
+        ]
+      ]
+    },
+    {
+      "key": "policyholder_slot",
+      "entity": "quote",
+      "type": "enum",
+      "label": "Who is the policyholder",
+      "label_fr": "Titulaire de la police",
+      "help_fr": "Le titulaire est la personne au nom de laquelle la police d’assurance sera établie.",
+      "enum": [
+        [
+          "self",
+          "Me"
+        ],
+        [
+          "spouse",
+          "My spouse or partner"
+        ],
+        [
+          "parent",
+          "My parent"
+        ],
+        [
+          "other",
+          "Someone else"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "self",
+          "Moi"
+        ],
+        [
+          "spouse",
+          "Mon conjoint ou ma conjointe"
+        ],
+        [
+          "parent",
+          "L’un de mes parents"
+        ],
+        [
+          "other",
+          "Une autre personne"
+        ]
+      ]
+    },
+    {
+      "key": "person_name",
+      "entity": "quote",
+      "type": "string",
+      "label": "Full name (as said)",
+      "label_fr": "Nom complet (tel que mentionné)",
+      "help_fr": "Nom donné dans la conversation, que nous séparons ensuite en prénom et nom de famille.",
+      "max_length": 120
+    },
+    {
+      "key": "first_name",
+      "entity": "quote",
+      "type": "string",
+      "label": "First name",
+      "label_fr": "Prénom",
+      "help_fr": "Tel qu’inscrit sur votre permis de conduire.",
+      "max_length": 60,
+      "required_for_quote": true
+    },
+    {
+      "key": "last_name",
+      "entity": "quote",
+      "type": "string",
+      "label": "Last name",
+      "label_fr": "Nom de famille",
+      "help_fr": "Tel qu’inscrit sur votre permis de conduire.",
+      "max_length": 60,
+      "required_for_quote": true
+    },
+    {
+      "key": "date_of_birth",
+      "entity": "quote",
+      "type": "date",
+      "label": "Date of birth",
+      "label_fr": "Date de naissance",
+      "help_fr": "Sert à établir votre âge, votre expérience de conduite et votre prime.",
+      "min_age": 16,
+      "max_age": 110,
+      "required_for_quote": true,
+      "pii": true
+    },
+    {
+      "key": "email",
+      "entity": "quote",
+      "type": "email",
+      "label": "Email",
+      "label_fr": "Adresse courriel",
+      "help_fr": "Nous y enverrons votre soumission.",
+      "required_for_quote": true,
+      "pii": true
+    },
+    {
+      "key": "phone_number",
+      "entity": "quote",
+      "type": "phone",
+      "label": "Phone number",
+      "label_fr": "Numéro de téléphone",
+      "help_fr": "Numéro à 10 chiffres, indicatif régional inclus, où nous pouvons vous joindre.",
+      "pattern": "^\\(?[2-9]\\d{2}\\)?[ .-]?\\d{3}[ .-]?\\d{4}$",
+      "pii": true
+    },
+    {
+      "key": "phone_type",
+      "entity": "quote",
+      "type": "enum",
+      "label": "Phone type",
+      "label_fr": "Type de téléphone",
+      "help_fr": "Cela nous indique comment vous joindre, par exemple par message texte.",
+      "enum": [
+        [
+          "mobile",
+          "Mobile"
+        ],
+        [
+          "home",
+          "Home"
+        ],
+        [
+          "work",
+          "Work"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "mobile",
+          "Cellulaire"
+        ],
+        [
+          "home",
+          "Résidence"
+        ],
+        [
+          "work",
+          "Travail"
+        ]
+      ]
+    },
+    {
+      "key": "contact_consent",
+      "entity": "quote",
+      "type": "boolean",
+      "label": "Consent to use and share my information for this quote",
+      "label_fr": "Consentement à l’utilisation et à la communication de mes renseignements personnels pour cette soumission",
+      "help_fr": "Votre accord est nécessaire pour utiliser vos renseignements personnels aux fins de cette soumission.",
+      "deterministic": true,
+      "required_for_quote": true
+    },
+    {
+      "key": "effective_date",
+      "entity": "quote",
+      "type": "date",
+      "label": "Coverage start date",
+      "label_fr": "Date de début de la protection",
+      "help_fr": "Jour où votre assurance commence, aujourd’hui ou dans les 90 prochains jours.",
+      "min_offset_days": 0,
+      "max_offset_days": 90,
+      "required_for_quote": true
+    },
+    {
+      "key": "gender",
+      "entity": "quote",
+      "type": "enum",
+      "label": "Gender",
+      "label_fr": "Genre",
+      "help_fr": "Vous pouvez choisir de ne pas répondre.",
+      "enum": [
+        [
+          "female",
+          "Female"
+        ],
+        [
+          "male",
+          "Male"
+        ],
+        [
+          "x",
+          "X / non-binary"
+        ],
+        [
+          "undisclosed",
+          "Prefer not to say"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "female",
+          "Femme"
+        ],
+        [
+          "male",
+          "Homme"
+        ],
+        [
+          "x",
+          "X (non binaire)"
+        ],
+        [
+          "undisclosed",
+          "Préfère ne pas répondre"
+        ]
+      ]
+    },
+    {
+      "key": "address_line1",
+      "entity": "quote",
+      "type": "string",
+      "label": "Street address",
+      "label_fr": "Adresse civique",
+      "help_fr": "Adresse de votre domicile, où le véhicule est habituellement stationné la nuit.",
+      "required_for_quote": true,
+      "pii": true,
+      "lookup_tool": "quoting.identify_address"
+    },
+    {
+      "key": "city",
+      "entity": "quote",
+      "type": "string",
+      "label": "City",
+      "label_fr": "Ville",
+      "help_fr": "Ville ou municipalité de votre domicile.",
+      "required_for_quote": true
+    },
+    {
+      "key": "province_code",
+      "entity": "quote",
+      "type": "enum",
+      "label": "Province",
+      "label_fr": "Province",
+      "help_fr": "Au Québec, la SAAQ couvre les blessures corporelles, tandis que les règles diffèrent dans les autres provinces.",
+      "required_for_quote": true,
+      "enum": [
+        [
+          "QC",
+          "Quebec"
+        ],
+        [
+          "ON",
+          "Ontario"
+        ],
+        [
+          "NB",
+          "New Brunswick"
+        ],
+        [
+          "NS",
+          "Nova Scotia"
+        ],
+        [
+          "PE",
+          "Prince Edward Island"
+        ],
+        [
+          "NL",
+          "Newfoundland and Labrador"
+        ],
+        [
+          "MB",
+          "Manitoba"
+        ],
+        [
+          "SK",
+          "Saskatchewan"
+        ],
+        [
+          "AB",
+          "Alberta"
+        ],
+        [
+          "BC",
+          "British Columbia"
+        ],
+        [
+          "YT",
+          "Yukon"
+        ],
+        [
+          "NT",
+          "Northwest Territories"
+        ],
+        [
+          "NU",
+          "Nunavut"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "QC",
+          "Québec"
+        ],
+        [
+          "ON",
+          "Ontario"
+        ],
+        [
+          "NB",
+          "Nouveau-Brunswick"
+        ],
+        [
+          "NS",
+          "Nouvelle-Écosse"
+        ],
+        [
+          "PE",
+          "Île-du-Prince-Édouard"
+        ],
+        [
+          "NL",
+          "Terre-Neuve-et-Labrador"
+        ],
+        [
+          "MB",
+          "Manitoba"
+        ],
+        [
+          "SK",
+          "Saskatchewan"
+        ],
+        [
+          "AB",
+          "Alberta"
+        ],
+        [
+          "BC",
+          "Colombie-Britannique"
+        ],
+        [
+          "YT",
+          "Yukon"
+        ],
+        [
+          "NT",
+          "Territoires du Nord-Ouest"
+        ],
+        [
+          "NU",
+          "Nunavut"
+        ]
+      ]
+    },
+    {
+      "key": "postal_code",
+      "entity": "quote",
+      "type": "postal_code",
+      "label": "Postal code",
+      "label_fr": "Code postal",
+      "help_fr": "Sert à établir votre prime selon votre secteur.",
+      "pattern": "^[ABCEGHJ-NPRSTVXY]\\d[ABCEGHJ-NPRSTV-Z][ -]?\\d[ABCEGHJ-NPRSTV-Z]\\d$",
+      "required_for_quote": true
+    },
+    {
+      "key": "vehicle_type",
+      "entity": "vehicle",
+      "type": "enum",
+      "label": "Vehicle type",
+      "label_fr": "Type de véhicule",
+      "help_fr": "La catégorie du véhicule influence le calcul de la prime.",
+      "lookup_tool": "quoting.identify_vehicle_type",
+      "enum": [
+        [
+          "car",
+          "Car"
+        ],
+        [
+          "suv",
+          "SUV"
+        ],
+        [
+          "minivan",
+          "Minivan"
+        ],
+        [
+          "pickup",
+          "Pickup truck"
+        ],
+        [
+          "motorcycle",
+          "Motorcycle"
+        ],
+        [
+          "motorhome",
+          "Motorhome"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "car",
+          "Voiture"
+        ],
+        [
+          "suv",
+          "Véhicule utilitaire sport (VUS)"
+        ],
+        [
+          "minivan",
+          "Minifourgonnette"
+        ],
+        [
+          "pickup",
+          "Camionnette"
+        ],
+        [
+          "motorcycle",
+          "Moto"
+        ],
+        [
+          "motorhome",
+          "Autocaravane (motorisé)"
+        ]
+      ],
+      "required_for_quote": true
+    },
+    {
+      "key": "vehicle_make_model",
+      "entity": "vehicle",
+      "type": "string",
+      "label": "Make and model (as said)",
+      "label_fr": "Marque et modèle (tels que mentionnés)",
+      "help_fr": "Texte donné dans la conversation, que nous validons ensuite avec notre catalogue de véhicules."
+    },
+    {
+      "key": "vehicle_make",
+      "entity": "vehicle",
+      "type": "string",
+      "label": "Make",
+      "label_fr": "Marque du véhicule",
+      "help_fr": "Le constructeur du véhicule, par exemple Toyota ou Honda.",
+      "lookup_tool": "quoting.lookup_make_model_year",
+      "required_for_quote": true
+    },
+    {
+      "key": "vehicle_model",
+      "entity": "vehicle",
+      "type": "string",
+      "label": "Model",
+      "label_fr": "Modèle du véhicule",
+      "help_fr": "Le nom du modèle, par exemple RAV4 ou Civic.",
+      "lookup_tool": "quoting.lookup_make_model_year",
+      "required_for_quote": true
+    },
+    {
+      "key": "vehicle_year",
+      "entity": "vehicle",
+      "type": "integer",
+      "label": "Year",
+      "label_fr": "Année du véhicule",
+      "help_fr": "L’année de modèle est inscrite sur votre certificat d’immatriculation.",
+      "min": 1950,
+      "max_offset_years": 1,
+      "required_for_quote": true
+    },
+    {
+      "key": "vin",
+      "entity": "vehicle",
+      "type": "vin",
+      "label": "VIN",
+      "label_fr": "Numéro d’identification du véhicule (NIV)",
+      "help_fr": "Code de 17 caractères inscrit sur votre certificat d’immatriculation de la SAAQ et sur le véhicule.",
+      "pattern": "^[A-HJ-NPR-Z0-9]{17}$",
+      "document_extractable": true,
+      "lookup_tool": "quoting.decode_vin",
+      "added": true
+    },
+    {
+      "key": "acquisition_condition",
+      "entity": "vehicle",
+      "type": "enum",
+      "label": "Condition when acquired",
+      "label_fr": "État du véhicule à l’acquisition",
+      "help_fr": "Indique si le véhicule était neuf, usagé ou démonstrateur lorsque vous l’avez obtenu.",
+      "enum": [
+        [
+          "new",
+          "New"
+        ],
+        [
+          "used",
+          "Used"
+        ],
+        [
+          "demo",
+          "Demo"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "new",
+          "Neuf"
+        ],
+        [
+          "used",
+          "Usagé"
+        ],
+        [
+          "demo",
+          "Démonstrateur"
+        ]
+      ]
+    },
+    {
+      "key": "acquisition_type",
+      "entity": "vehicle",
+      "type": "enum",
+      "label": "How it was acquired",
+      "label_fr": "Mode d’acquisition",
+      "help_fr": "Précise si le véhicule est acheté, financé ou loué, ce qui peut influer sur les protections exigées.",
+      "enum": [
+        [
+          "purchased",
+          "Purchased"
+        ],
+        [
+          "financed",
+          "Financed"
+        ],
+        [
+          "leased",
+          "Leased"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "purchased",
+          "Acheté"
+        ],
+        [
+          "financed",
+          "Financé"
+        ],
+        [
+          "leased",
+          "Loué"
+        ]
+      ]
+    },
+    {
+      "key": "vehicle_value",
+      "entity": "vehicle",
+      "type": "currency",
+      "label": "Vehicle value",
+      "label_fr": "Valeur du véhicule",
+      "help_fr": "Valeur actuelle approximative, qui sert à établir l’indemnité en cas de perte totale.",
+      "min": 500,
+      "max": 500000
+    },
+    {
+      "key": "antique_vehicle",
+      "entity": "vehicle",
+      "type": "boolean",
+      "label": "Antique vehicle (25+ years, collector)",
+      "label_fr": "Véhicule d’époque ou de collection (25 ans et plus)",
+      "help_fr": "Un véhicule de collection peut être assuré selon des conditions particulières."
+    },
+    {
+      "key": "modified_for_performance",
+      "entity": "vehicle",
+      "type": "boolean",
+      "label": "Modified for performance",
+      "label_fr": "Véhicule modifié pour accroître sa performance",
+      "help_fr": "Les modifications au moteur, à l’échappement ou à la suspension peuvent changer le risque assuré."
+    },
+    {
+      "key": "annual_kilometers",
+      "entity": "vehicle",
+      "type": "integer",
+      "label": "Kilometres per year",
+      "label_fr": "Kilométrage annuel",
+      "help_fr": "Nombre approximatif de kilomètres parcourus par année, qui influence le calcul de votre prime.",
+      "min": 0,
+      "max": 100000,
+      "step": 1000,
+      "required_for_quote": true
+    },
+    {
+      "key": "usage_type",
+      "entity": "vehicle",
+      "type": "enum",
+      "label": "Main use",
+      "label_fr": "Utilisation principale",
+      "help_fr": "La façon dont vous utilisez principalement le véhicule influence le calcul de votre prime.",
+      "enum": [
+        [
+          "pleasure",
+          "Pleasure"
+        ],
+        [
+          "commute",
+          "Commute to work or school"
+        ],
+        [
+          "business",
+          "Business"
+        ],
+        [
+          "farm",
+          "Farm"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "pleasure",
+          "Agrément (loisirs, courses)"
+        ],
+        [
+          "commute",
+          "Aller au travail ou à l’école"
+        ],
+        [
+          "business",
+          "Affaires"
+        ],
+        [
+          "farm",
+          "Agricole"
+        ]
+      ],
+      "required_for_quote": true
+    },
+    {
+      "key": "outside_quebec",
+      "entity": "vehicle",
+      "type": "boolean",
+      "label": "Driven outside Quebec",
+      "label_fr": "Véhicule conduit à l’extérieur du Québec",
+      "help_fr": "Indiquez si le véhicule circule hors du Québec, par exemple en Ontario ou aux États-Unis."
+    },
+    {
+      "key": "outside_quebec_more_than_25_weeks",
+      "entity": "vehicle",
+      "type": "boolean",
+      "label": "Outside Quebec more than 25 weeks a year",
+      "label_fr": "Plus de 25 semaines par année à l’extérieur du Québec",
+      "help_fr": "Au-delà de 25 semaines par année, des conditions particulières peuvent s’appliquer.",
+      "visible_if": "outside_quebec == true"
+    },
+    {
+      "key": "weeks_outside_quebec",
+      "entity": "vehicle",
+      "type": "integer",
+      "label": "Weeks per year outside Quebec",
+      "label_fr": "Nombre de semaines par année à l’extérieur du Québec",
+      "help_fr": "Nombre approximatif de semaines par année où le véhicule se trouve hors du Québec.",
+      "min": 0,
+      "max": 52,
+      "visible_if": "outside_quebec == true"
+    },
+    {
+      "key": "parking_place_type_code",
+      "entity": "vehicle",
+      "type": "enum",
+      "label": "Where it is parked",
+      "label_fr": "Lieu de stationnement",
+      "help_fr": "L’endroit où le véhicule passe la nuit influence le risque de vol et de vandalisme.",
+      "enum": [
+        [
+          "private_garage",
+          "Private garage"
+        ],
+        [
+          "carport",
+          "Carport"
+        ],
+        [
+          "driveway",
+          "Driveway"
+        ],
+        [
+          "street",
+          "Street"
+        ],
+        [
+          "underground_lot",
+          "Underground lot"
+        ],
+        [
+          "outdoor_lot",
+          "Outdoor lot"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "private_garage",
+          "Garage privé"
+        ],
+        [
+          "carport",
+          "Abri d’auto"
+        ],
+        [
+          "driveway",
+          "Entrée privée"
+        ],
+        [
+          "street",
+          "Rue"
+        ],
+        [
+          "underground_lot",
+          "Stationnement souterrain"
+        ],
+        [
+          "outdoor_lot",
+          "Stationnement extérieur"
+        ]
+      ]
+    },
+    {
+      "key": "parking_hours_code",
+      "entity": "vehicle",
+      "type": "enum",
+      "label": "When it is parked there",
+      "label_fr": "Période de stationnement à cet endroit",
+      "help_fr": "Le moment de la journée où le véhicule est stationné à cet endroit.",
+      "enum": [
+        [
+          "night",
+          "At night"
+        ],
+        [
+          "day",
+          "During the day"
+        ],
+        [
+          "day_and_night",
+          "Day and night"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "night",
+          "La nuit"
+        ],
+        [
+          "day",
+          "Le jour"
+        ],
+        [
+          "day_and_night",
+          "Jour et nuit"
+        ]
+      ]
+    },
+    {
+      "key": "night_parking_label",
+      "entity": "vehicle",
+      "type": "string",
+      "label": "Night parking description",
+      "label_fr": "Précisions sur le stationnement de nuit",
+      "help_fr": "Ajoutez tout détail inhabituel, par exemple un garage partagé."
+    },
+    {
+      "key": "driver_name",
+      "entity": "driver",
+      "type": "string",
+      "label": "Driver's full name",
+      "label_fr": "Nom complet du conducteur",
+      "help_fr": "Prénom et nom du conducteur, tels qu’inscrits sur son permis de conduire.",
+      "max_length": 120,
+      "added": true
+    },
+    {
+      "key": "driver_date_of_birth",
+      "entity": "driver",
+      "type": "date",
+      "label": "Driver's date of birth",
+      "label_fr": "Date de naissance du conducteur",
+      "help_fr": "Sert à établir l’âge et l’expérience de ce conducteur, qui doit avoir au moins 16 ans.",
+      "min_age": 16,
+      "max_age": 110,
+      "pii": true,
+      "added": true
+    },
+    {
+      "key": "relationship_code",
+      "entity": "driver",
+      "type": "enum",
+      "label": "Relationship to policyholder",
+      "label_fr": "Lien avec le titulaire de la police",
+      "help_fr": "Précise le lien entre ce conducteur et le titulaire de la police.",
+      "enum": [
+        [
+          "self",
+          "Policyholder"
+        ],
+        [
+          "spouse",
+          "Spouse or partner"
+        ],
+        [
+          "child",
+          "Child"
+        ],
+        [
+          "parent",
+          "Parent"
+        ],
+        [
+          "other",
+          "Other"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "self",
+          "Titulaire de la police"
+        ],
+        [
+          "spouse",
+          "Conjoint ou conjointe"
+        ],
+        [
+          "child",
+          "Enfant"
+        ],
+        [
+          "parent",
+          "Parent"
+        ],
+        [
+          "other",
+          "Autre"
+        ]
+      ],
+      "added": true
+    },
+    {
+      "key": "marital_status_code",
+      "entity": "driver",
+      "type": "enum",
+      "label": "Marital status",
+      "label_fr": "État civil",
+      "help_fr": "L’état civil peut influencer le calcul de la prime.",
+      "enum": [
+        [
+          "single",
+          "Single"
+        ],
+        [
+          "married",
+          "Married"
+        ],
+        [
+          "common_law",
+          "Common-law"
+        ],
+        [
+          "separated",
+          "Separated"
+        ],
+        [
+          "divorced",
+          "Divorced"
+        ],
+        [
+          "widowed",
+          "Widowed"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "single",
+          "Célibataire"
+        ],
+        [
+          "married",
+          "Marié ou mariée"
+        ],
+        [
+          "common_law",
+          "Union de fait"
+        ],
+        [
+          "separated",
+          "Séparé ou séparée"
+        ],
+        [
+          "divorced",
+          "Divorcé ou divorcée"
+        ],
+        [
+          "widowed",
+          "Veuf ou veuve"
+        ]
+      ],
+      "required_for_quote": true
+    },
+    {
+      "key": "employment_status_code",
+      "entity": "driver",
+      "type": "enum",
+      "label": "Employment status",
+      "label_fr": "Situation d’emploi",
+      "help_fr": "Votre situation professionnelle peut influencer le calcul de la prime.",
+      "enum": [
+        [
+          "employed",
+          "Employed"
+        ],
+        [
+          "self_employed",
+          "Self-employed"
+        ],
+        [
+          "student",
+          "Student"
+        ],
+        [
+          "retired",
+          "Retired"
+        ],
+        [
+          "unemployed",
+          "Not employed"
+        ],
+        [
+          "homemaker",
+          "Homemaker"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "employed",
+          "En emploi"
+        ],
+        [
+          "self_employed",
+          "Travail autonome"
+        ],
+        [
+          "student",
+          "Aux études"
+        ],
+        [
+          "retired",
+          "À la retraite"
+        ],
+        [
+          "unemployed",
+          "Sans emploi"
+        ],
+        [
+          "homemaker",
+          "Personne au foyer"
+        ]
+      ]
+    },
+    {
+      "key": "occupation_label",
+      "entity": "driver",
+      "type": "string",
+      "label": "Occupation",
+      "label_fr": "Profession",
+      "help_fr": "Le métier ou la profession que vous exercez."
+    },
+    {
+      "key": "age_obtained_license",
+      "entity": "driver",
+      "type": "integer",
+      "label": "Age when licensed",
+      "label_fr": "Âge à l’obtention du premier permis de conduire",
+      "help_fr": "L’âge où vous avez obtenu votre premier permis de conduire, qui sert à mesurer votre expérience.",
+      "min": 16,
+      "max": 99,
+      "required_for_quote": true
+    },
+    {
+      "key": "license_year",
+      "entity": "driver",
+      "type": "integer",
+      "label": "Year first licensed",
+      "label_fr": "Année d’obtention du premier permis de conduire",
+      "help_fr": "Elle sert à calculer vos années d’expérience de conduite.",
+      "min": 1940,
+      "max_offset_years": 0
+    },
+    {
+      "key": "years_licensed",
+      "entity": "driver",
+      "type": "integer",
+      "label": "Years licensed",
+      "label_fr": "Années depuis l’obtention du permis de conduire",
+      "help_fr": "Calculées automatiquement à partir de l’année d’obtention du premier permis.",
+      "derived_from": [
+        "license_year"
+      ],
+      "min": 0,
+      "max": 90
+    },
+    {
+      "key": "years_with_current_insurer",
+      "entity": "driver",
+      "type": "integer",
+      "label": "Years with current insurer",
+      "label_fr": "Années chez l’assureur actuel",
+      "help_fr": "Une longue relation avec votre assureur actuel peut réduire votre prime.",
+      "min": 0,
+      "max": 70
+    },
+    {
+      "key": "age_became_principal_driver",
+      "entity": "driver",
+      "type": "integer",
+      "label": "Age when you became a principal driver",
+      "label_fr": "Âge au début de votre rôle de conducteur principal",
+      "help_fr": "L’âge où vous avez eu, pour la première fois, un véhicule que vous conduisiez principalement.",
+      "min": 16,
+      "max": 99
+    },
+    {
+      "key": "years_as_principal_driver",
+      "entity": "driver",
+      "type": "integer",
+      "label": "Years as principal driver",
+      "label_fr": "Années comme conducteur principal",
+      "help_fr": "Calculées à partir de votre âge et de l’âge où vous êtes devenu conducteur principal.",
+      "derived_from": [
+        "age_became_principal_driver",
+        "date_of_birth"
+      ],
+      "min": 0,
+      "max": 90
+    },
+    {
+      "key": "heavy_vehicle_experience_years",
+      "entity": "driver",
+      "type": "integer",
+      "label": "Years of heavy-vehicle experience",
+      "label_fr": "Années d’expérience de conduite de véhicules lourds",
+      "help_fr": "Nombre d’années passées à conduire des camions, des autobus ou d’autres véhicules lourds.",
+      "min": 0,
+      "max": 60
+    },
+    {
+      "key": "has_foreign_license",
+      "entity": "driver",
+      "type": "boolean",
+      "label": "Has held a licence outside Canada",
+      "label_fr": "Permis de conduire déjà détenu hors du Canada",
+      "help_fr": "Nous en tenons compte pour évaluer votre expérience de conduite."
+    },
+    {
+      "key": "education_level_code",
+      "entity": "driver",
+      "type": "enum",
+      "label": "Education level",
+      "label_fr": "Niveau de scolarité",
+      "help_fr": "Le plus haut niveau de scolarité que vous avez atteint.",
+      "enum": [
+        [
+          "high_school",
+          "High school"
+        ],
+        [
+          "cegep",
+          "CEGEP / college"
+        ],
+        [
+          "bachelor",
+          "Bachelor's degree"
+        ],
+        [
+          "graduate",
+          "Graduate degree"
+        ],
+        [
+          "other",
+          "Other"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "high_school",
+          "Études secondaires"
+        ],
+        [
+          "cegep",
+          "Études collégiales (cégep)"
+        ],
+        [
+          "bachelor",
+          "Baccalauréat"
+        ],
+        [
+          "graduate",
+          "Maîtrise ou doctorat"
+        ],
+        [
+          "other",
+          "Autre"
+        ]
+      ]
+    },
+    {
+      "key": "limited_use_frequency_code",
+      "entity": "driver",
+      "type": "enum",
+      "label": "How often this driver uses the vehicle",
+      "label_fr": "Fréquence d’utilisation du véhicule par ce conducteur",
+      "help_fr": "Précise si ce conducteur conduit le véhicule régulièrement ou à titre de conducteur occasionnel.",
+      "enum": [
+        [
+          "regular",
+          "Regularly"
+        ],
+        [
+          "occasional",
+          "Occasionally"
+        ],
+        [
+          "weekends",
+          "Weekends only"
+        ],
+        [
+          "student_away",
+          "Student living away from home"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "regular",
+          "Régulièrement"
+        ],
+        [
+          "occasional",
+          "Occasionnellement"
+        ],
+        [
+          "weekends",
+          "Fins de semaine seulement"
+        ],
+        [
+          "student_away",
+          "Aux études, loin du domicile familial"
+        ]
+      ]
+    },
+    {
+      "key": "driver_license_number",
+      "entity": "driver",
+      "type": "string",
+      "label": "Driver's licence number",
+      "label_fr": "Numéro de permis de conduire",
+      "help_fr": "Une lettre suivie de 12 chiffres, inscrits sur le permis de conduire délivré par la SAAQ.",
+      "pattern": "^[A-Z]\\d{4}[ -]?\\d{6}[ -]?\\d{2}$",
+      "deterministic": true,
+      "pii": true,
+      "document_extractable": true
+    },
+    {
+      "key": "has_claims",
+      "entity": "underwriting",
+      "type": "boolean",
+      "label": "Any claims in the past 6 years",
+      "label_fr": "Réclamations (6 dernières années)",
+      "help_fr": "Toute réclamation à un assureur auto, que vous soyez responsable ou non.",
+      "deterministic": true,
+      "required_for_quote": true
+    },
+    {
+      "key": "has_convictions_in_past_three_years",
+      "entity": "underwriting",
+      "type": "boolean",
+      "label": "Any traffic convictions in the past 3 years",
+      "label_fr": "Infractions au Code de la sécurité routière (3 dernières années)",
+      "help_fr": "Infractions au Code de la sécurité routière, comme un excès de vitesse, au cours des 3 dernières années.",
+      "deterministic": true,
+      "required_for_quote": true
+    },
+    {
+      "key": "claim_question_asked",
+      "entity": "underwriting",
+      "type": "boolean",
+      "label": "Claims question asked",
+      "label_fr": "Question sur les réclamations déjà posée",
+      "help_fr": "Indicateur interne qui évite de poser deux fois la question sur les réclamations.",
+      "system": true
+    },
+    {
+      "key": "denied_or_cancelled_question_asked",
+      "entity": "underwriting",
+      "type": "boolean",
+      "label": "Refused or cancelled question asked",
+      "label_fr": "Question sur le refus ou la résiliation déjà posée",
+      "help_fr": "Indicateur interne qui évite de poser deux fois la question sur un refus ou une résiliation d’assurance.",
+      "system": true
+    },
+    {
+      "key": "conviction_question_asked",
+      "entity": "underwriting",
+      "type": "boolean",
+      "label": "Convictions question asked",
+      "label_fr": "Question sur les infractions déjà posée",
+      "help_fr": "Indicateur interne qui évite de poser deux fois la question sur les infractions.",
+      "system": true
+    },
+    {
+      "key": "was_denied_or_cancelled",
+      "entity": "underwriting",
+      "type": "boolean",
+      "label": "Insurance refused, cancelled or not renewed in the past 3 years",
+      "label_fr": "Assurance refusée, résiliée ou non renouvelée (3 dernières années)",
+      "help_fr": "Indiquez si un assureur a refusé de vous assurer, a résilié votre police ou ne l’a pas renouvelée.",
+      "deterministic": true,
+      "added": true
+    },
+    {
+      "key": "claims_detail",
+      "entity": "underwriting",
+      "type": "list",
+      "label": "Claims",
+      "label_fr": "Détail des réclamations",
+      "help_fr": "Pour chaque réclamation, la date, le type, le montant payé et si vous étiez responsable.",
+      "item": {
+        "date": "date",
+        "type": [
+          [
+            "collision",
+            "Collision"
+          ],
+          [
+            "theft",
+            "Theft"
+          ],
+          [
+            "glass",
+            "Glass"
+          ],
+          [
+            "vandalism",
+            "Vandalism"
+          ],
+          [
+            "other",
+            "Other"
+          ]
+        ],
+        "amount": "currency",
+        "at_fault": "boolean"
+      },
+      "visible_if": "has_claims == true",
+      "added": true
+    },
+    {
+      "key": "convictions_detail",
+      "entity": "underwriting",
+      "type": "list",
+      "label": "Convictions",
+      "label_fr": "Détail des infractions",
+      "help_fr": "La date et le type de chaque infraction au Code de la sécurité routière.",
+      "item": {
+        "date": "date",
+        "type": [
+          [
+            "speeding",
+            "Speeding"
+          ],
+          [
+            "distracted",
+            "Distracted driving"
+          ],
+          [
+            "red_light",
+            "Red light"
+          ],
+          [
+            "impaired",
+            "Impaired driving"
+          ],
+          [
+            "other",
+            "Other"
+          ]
+        ]
+      },
+      "visible_if": "has_convictions_in_past_three_years == true",
+      "added": true
+    },
+    {
+      "key": "deductible",
+      "entity": "underwriting",
+      "type": "enum",
+      "label": "Collision deductible",
+      "label_fr": "Franchise en cas de collision",
+      "help_fr": "Montant que vous payez lors d’une réclamation avant que l’assureur paie le reste.",
+      "enum": [
+        [
+          "250",
+          "$250"
+        ],
+        [
+          "500",
+          "$500"
+        ],
+        [
+          "1000",
+          "$1,000"
+        ],
+        [
+          "2500",
+          "$2,500"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "250",
+          "250 $"
+        ],
+        [
+          "500",
+          "500 $"
+        ],
+        [
+          "1000",
+          "1 000 $"
+        ],
+        [
+          "2500",
+          "2 500 $"
+        ]
+      ],
+      "added": true
+    },
+    {
+      "key": "add_ons",
+      "entity": "underwriting",
+      "type": "multi_enum",
+      "label": "Optional protections",
+      "label_fr": "Protections facultatives",
+      "help_fr": "Protections à ajouter à votre assurance de base, selon vos besoins.",
+      "enum": [
+        [
+          "roadside",
+          "Roadside assistance"
+        ],
+        [
+          "rental_car",
+          "Rental car"
+        ],
+        [
+          "accident_forgiveness",
+          "Accident forgiveness"
+        ],
+        [
+          "new_vehicle_replacement",
+          "New vehicle replacement"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "roadside",
+          "Assistance routière"
+        ],
+        [
+          "rental_car",
+          "Voiture de location"
+        ],
+        [
+          "accident_forgiveness",
+          "Pardon d’accident"
+        ],
+        [
+          "new_vehicle_replacement",
+          "Remplacement à neuf"
+        ]
+      ],
+      "added": true
+    },
+    {
+      "key": "callback_slot",
+      "entity": "underwriting",
+      "type": "string",
+      "label": "Advisor callback time",
+      "label_fr": "Plage horaire pour le rappel d’un conseiller",
+      "help_fr": "La période pendant laquelle un conseiller peut vous téléphoner.",
+      "added": true
+    },
+    {
+      "key": "interested_by_property_quote",
+      "entity": "underwriting",
+      "type": "boolean",
+      "label": "Interested in a home quote",
+      "label_fr": "Intérêt pour une soumission d’assurance habitation",
+      "help_fr": "Si vous répondez oui, un conseiller peut préparer une soumission d’assurance habitation."
+    },
+    {
+      "key": "offer_type",
+      "entity": "underwriting",
+      "type": "enum",
+      "label": "Offer",
+      "label_fr": "Offre",
+      "help_fr": "La formule d’assurance choisie parmi les trois offres présentées.",
+      "enum": [
+        [
+          "essential",
+          "Essential"
+        ],
+        [
+          "plus",
+          "Plus"
+        ],
+        [
+          "premium",
+          "Premium"
+        ]
+      ],
+      "enum_fr": [
+        [
+          "essential",
+          "Essentiel"
+        ],
+        [
+          "plus",
+          "Plus"
+        ],
+        [
+          "premium",
+          "Premium"
+        ]
+      ]
+    },
+    {
+      "key": "driver_vehicle_assignments",
+      "entity": "household",
+      "type": "assignment_matrix",
+      "label": "Who drives which vehicle",
+      "label_fr": "Qui conduit quel véhicule",
+      "help_fr": "Indiquez pour chaque véhicule son conducteur principal et ses conducteurs occasionnels.",
+      "item": {
+        "driver_index": "integer",
+        "vehicle_index": "integer",
+        "role": [
+          [
+            "principal",
+            "Principal"
+          ],
+          [
+            "occasional",
+            "Occasional"
+          ],
+          [
+            "none",
+            "Does not drive"
+          ]
+        ],
+        "percent_use": "integer"
+      },
+      "item_role_fr": [
+        [
+          "principal",
+          "Conducteur principal"
+        ],
+        [
+          "occasional",
+          "Conducteur occasionnel"
+        ],
+        [
+          "none",
+          "Ne conduit pas"
+        ]
+      ],
+      "required_for_quote": true
+    },
+    {
+      "key": "handoff_summary",
+      "entity": "quote",
+      "type": "string",
+      "label": "Conversation summary for the advisor",
+      "label_fr": "Résumé de la conversation pour le conseiller",
+      "help_fr": "Le résumé que le conseiller lira en premier. Vous pouvez le modifier avant l’envoi.",
+      "added": true
+    },
+    {
+      "key": "handoff_consent",
+      "entity": "quote",
+      "type": "boolean",
+      "label": "Consent to send the summary to an advisor",
+      "label_fr": "Consentement à transmettre le résumé à un conseiller",
+      "help_fr": "Votre accord pour que ce résumé et vos réponses soient transmis à un conseiller Desjardins Assurances.",
+      "added": true
+    }
+  ],
+  "field_value_envelope": {
+    "$comment": "Every stored value is wrapped so the side panel, audit log and conflict rules can reason about provenance.",
+    "value": "any",
+    "source": [
+      "chat",
+      "form",
+      "document",
+      "lookup",
+      "system"
+    ],
+    "confidence": "number 0..1 (1 for form, lookup and system)",
+    "status": [
+      "inferred",
+      "confirmed",
+      "pending_confirmation"
+    ],
+    "turn": "integer",
+    "updated_at": "RFC 3339 timestamp"
+  },
+  "$added_fields": "Fields with added=true are not in the brief's state list. They were added because a required form needs them: VIN for the fleet and VIN-photo cases, driver name, date of birth and relationship for additional drivers, claim and conviction details, quote options, and the advisor callback, and the end-of-form hand-off summary and its consent (D19)."
+}

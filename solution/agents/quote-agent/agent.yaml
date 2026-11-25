@@ -1,0 +1,40 @@
+# Hosted agent definition for the Foundry source-zip deploy, read by deploy/deploy_quote_agent.py.
+# Field names follow azure.ai.projects.models.HostedAgentDefinition (azure-ai-projects 2.11).
+# ${NAME} is replaced by the matching deploy option (see README); the models, thinking levels, token limits, timeout and
+# memory output schema default from settings.yaml at the solution root. No secrets: every call uses the agent identity.
+name: quote-agent
+description: "Auto quoting chat: main agent + memory agent (invocations protocol, SSE)"
+definition:
+  cpu: ${CPU}
+  memory: ${MEMORY}
+  code_configuration:
+    runtime: python_3_13
+    entry_point: [python, main.py]
+    dependency_resolution: remote_build
+  protocol_versions:
+    - protocol: invocations
+      version: ${PROTOCOL_VERSION}   # [UNVERIFIED] value (spike S2); default 2.0.0
+  environment_variables:
+    QUOTE_AGENT_MODEL: azure
+    FOUNDRY_PROJECT_ENDPOINT: ${FOUNDRY_PROJECT_ENDPOINT}
+    MAIN_MODEL_DEPLOYMENT: ${MAIN_MODEL_DEPLOYMENT}
+    MEMORY_MODEL_DEPLOYMENT: ${MEMORY_MODEL_DEPLOYMENT}
+    MAIN_REASONING_EFFORT: ${MAIN_REASONING_EFFORT}
+    MAIN_TEMPERATURE: ${MAIN_TEMPERATURE}
+    MAIN_MAX_OUTPUT_TOKENS: ${MAIN_MAX_OUTPUT_TOKENS}
+    MEMORY_REASONING_EFFORT: ${MEMORY_REASONING_EFFORT}
+    MEMORY_TEMPERATURE: ${MEMORY_TEMPERATURE}
+    MEMORY_MAX_OUTPUT_TOKENS: ${MEMORY_MAX_OUTPUT_TOKENS}
+    MEMORY_TIMEOUT_SECONDS: ${MEMORY_TIMEOUT_SECONDS}
+    MEMORY_OUTPUT_SCHEMA: ${MEMORY_OUTPUT_SCHEMA}
+    PROMPT_VERSION: ${PROMPT_VERSION}
+    TOOLBOX_MCP_URL: ${TOOLBOX_MCP_URL}
+    FOUNDRY_IQ_MCP_URL: ${FOUNDRY_IQ_MCP_URL}
+    FOUNDRY_IQ_TOKEN_SCOPE: ${FOUNDRY_IQ_TOKEN_SCOPE}
+    COSMOS_ENDPOINT: ${COSMOS_ENDPOINT}
+    COSMOS_DATABASE: ${COSMOS_DATABASE}
+    COSMOS_CONTAINER: ${COSMOS_CONTAINER}
+    PORT: "8088"
+    PYTHONNOUSERSITE: "1"
+    ENABLE_SENSITIVE_DATA: "false"
+    OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "false"

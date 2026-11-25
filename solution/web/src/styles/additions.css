@@ -1,0 +1,25 @@
+/* additions.css: the few rules the React port needs that the prototype did not have. Everything else is
+   prototype.css (demo/src/styles.css) and shell.css (demo/src/journey.html) unchanged. */
+
+/* FR-A2UI-7: a live autofill on a field the customer edited is offered, not applied. */
+.suggest { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--violet); background: var(--violet-soft); border-radius: 8px; padding: 4px 4px 4px 10px; }
+.suggest .btn.ghost { height: 28px; }
+
+/* Developer-only text in customer components (shown with the trace drawer, body.dev). */
+.dev-only { display: none; color: var(--ink-3); }
+body.dev .dev-only { display: inline; }
+
+/* The trace drawer's toggle replaces the prototype's demo bar button. */
+.trace-toggle { position: fixed; right: 12px; bottom: 12px; z-index: 86; border: 1px solid #555; background: #1F1F1F; color: #EEE; padding: 5px 10px; border-radius: 6px; font-size: 12.5px; }
+.trace-toggle[aria-pressed="true"] { background: #fff; color: #111; }
+.trace-toggle .n { opacity: .7; margin-left: 4px; }
+@media (max-width: 600px) { .trace-toggle { bottom: calc(66px + var(--sab)); } }
+
+/* Fix: the "from chat" badge picked up the chat container's column layout (.chat), putting its dot
+   above the text; the prototype has the same fix for .note.chat. */
+.badge.chat { flex-direction: row; min-height: 0; }
+
+/* Reduced motion also means no smooth scrolling of the conversation (NFR-ACC-2). */
+@media (prefers-reduced-motion: reduce) {
+  .chat-scroll { scroll-behavior: auto; }
+}

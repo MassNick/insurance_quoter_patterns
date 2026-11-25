@@ -1,0 +1,37 @@
+# Agent and model settings: the one file to change a model, the thinking level or a structured output.
+#
+# Read by Terraform (the model deployments, infra/terraform/locals.tf), the agent deploy scripts (the hosted agent's
+# environment, the document agent definition) and the knowledge-base script. Environment variables and explicit
+# deploy flags still win over this file. No secrets here: every call uses a managed identity.
+
+# Foundry model deployments, created by Terraform in the Foundry account's region (`location` in the tfvars).
+# sku: Standard = processed in that region; DataZoneStandard / GlobalStandard = wider (Law 25 review before real data).
+# capacity: thousands of tokens per minute, within the subscription quota for that model and sku.
+deployments:
+  main: { model: gpt-5.6-terra, version: "2026-07-09", sku: GlobalStandard, capacity: 50 }
+  memory: { model: gpt-5.6-luna, version: "2026-07-09", sku: GlobalStandard, capacity: 50 }
+  document: { model: gpt-5.6-luna, version: "2026-07-09", sku: GlobalStandard, capacity: 30 }
+  embedding: { model: text-embedding-3-large, version: "1", sku: GlobalStandard, capacity: 50 }
+
+# One entry per agent. `deployment` names a key above. `reasoning_effort` is the thinking level
+# (minimal | low | medium | high). `output_schema` is the structured output, a file in contracts/.
+agents:
+  main: # quote-agent, main agent: chat, tools, forms (contracts/prompts/main-agent.md)
+    deployment: main
+    reasoning_effort: low
+    max_output_tokens: 6000
+  memory: # quote-agent, memory agent: state extraction (contracts/prompts/memory-agent.md)
+    deployment: memory
+    reasoning_effort: low
+    max_output_tokens: 3000
+    output_schema: memory-output.schema.json
+    timeout_seconds: 8 # GPT-5.6 with reasoning took about 2.2 s on the dev deploy; 4 s left too little margin
+  document: # document agent: reads a licence, registration or policy (contracts/prompts/document-agent.md)
+    deployment: document
+    reasoning_effort: low
+    output_schema: document-output.schema.json
+
+# Foundry IQ knowledge base (deploy/create_knowledge_base.py).
+knowledge:
+  embedding_deployment: embedding
+  planning_deployment: memory

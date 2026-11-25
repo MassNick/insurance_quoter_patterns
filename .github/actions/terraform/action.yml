@@ -1,0 +1,78 @@
+name: Terraform plan and apply
+description: One pass of infra/terraform for an environment (remote state in Azure Storage, OIDC). Writes the outputs to $RUNNER_TEMP/tf.json. Run azure-env first.
+inputs:
+  environment:
+    description: dev, test or prod (the state key and the tfvars file name)
+    required: true
+  tfvars:
+    description: Contents of environments/<env>.tfvars (a GitHub environment variable; no secrets belong in it)
+    required: true
+  state-resource-group:
+    description: Resource group of the Terraform state storage account
+    required: true
+  state-storage-account:
+    description: Storage account that holds the state container tfstate
+    required: true
+  apps:
+    description: "auto = keep the container apps if the state has them, true, or false (first pass, before the images exist)"
+    default: auto
+  app-images:
+    description: JSON map app -> image for the pass that creates the apps. Ignored for apps that already exist.
+    default: ""
+  extra-args:
+    description: Extra terraform arguments, for example -var quote_agent_principal_id=<id>
+    default: ""
+  plan-only:
+    description: Plan and print the plan, apply nothing
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      with:
+        terraform_version: 1.17.2
+        terraform_wrapper: false
+    - shell: bash
+      working-directory: solution/infra/terraform
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        TFVARS: ${{ inputs.tfvars }}
+        STATE_RG: ${{ inputs.state-resource-group }}
+        STATE_SA: ${{ inputs.state-storage-account }}
+        APPS: ${{ inputs.apps }}
+        APP_IMAGES: ${{ inputs.app-images }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        PLAN_ONLY: ${{ inputs.plan-only }}
+      run: |
+        set -euo pipefail
+        printf '%s\n' 'terraform { backend "azurerm" {} }' > backend_override.tf   # backend.tf stays commented for local use
+        printf '%s\n' "$TFVARS" > "$RUNNER_TEMP/$ENVIRONMENT.tfvars"
+        terraform init -input=false \
+          -backend-config="resource_group_name=$STATE_RG" -backend-config="storage_account_name=$STATE_SA" \
+          -backend-config="container_name=tfstate" -backend-config="key=aiq-$ENVIRONMENT.tfstate" \
+          -backend-config="use_azuread_auth=true" -backend-config="use_oidc=true"
+
+        deploy="$APPS"
+        if [ "$APPS" = auto ]; then
+          if terraform output -json app_fqdns 2>/dev/null | jq -e 'length > 0' > /dev/null; then deploy=true; else deploy=false; fi
+        fi
+        args=(-input=false -var-file="$RUNNER_TEMP/$ENVIRONMENT.tfvars" -var "deploy_apps=$deploy")
+        if [ "$deploy" = true ]; then
+          # Existing apps ignore the image (lifecycle.ignore_changes), but the variable is validated.
+          keep='{"bff":"keep","mcp-quoting":"keep","mcp-a2ui":"keep","web":"keep"}'
+          args+=(-var "app_images=${APP_IMAGES:-$keep}")
+        fi
+        # The agent identity exists only after the first agent deploy, so the tfvars usually lack it. A pass without it
+        # would delete the agent's role assignments until the pass of step 6 puts them back: reuse the id the state holds
+        # (output quote_agent_principal_id). A value in the tfvars wins, and EXTRA_ARGS (appended below) wins over both.
+        if ! grep -Eq '^[[:space:]]*quote_agent_principal_id[[:space:]]*=' "$RUNNER_TEMP/$ENVIRONMENT.tfvars"; then
+          agent="$(terraform output -json quote_agent_principal_id 2>/dev/null | jq -r '. // empty' || true)"
+          if [ -n "$agent" ]; then args+=(-var "quote_agent_principal_id=$agent"); fi
+        fi
+        if [ -n "$EXTRA_ARGS" ]; then read -r -a extra <<< "$EXTRA_ARGS"; args+=("${extra[@]}"); fi
+
+        terraform plan -out="$RUNNER_TEMP/tfplan" "${args[@]}"
+        { echo "<details><summary>terraform plan ($ENVIRONMENT, deploy_apps=$deploy)</summary>"; echo; echo '```'
+          terraform show -no-color "$RUNNER_TEMP/tfplan" | head -c 50000; echo '```'; echo '</details>'; } >> "$GITHUB_STEP_SUMMARY"
+        if [ "$PLAN_ONLY" != true ]; then terraform apply -input=false "$RUNNER_TEMP/tfplan"; fi
+        terraform output -json > "$RUNNER_TEMP/tf.json"

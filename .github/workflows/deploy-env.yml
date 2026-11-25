@@ -1,0 +1,148 @@
+# One environment, end to end, in the order of infra/README.md: terraform, images, container apps, Foundry data plane, smoke.
+# Called twice by cd.yml (dev, then prod). One job on purpose: the environment's required reviewers approve once.
+#
+# GitHub environment (dev, prod), no secrets, all values are variables:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   an identity with a federated credential for repo:<org>/<repo>:environment:<env>
+#   TFVARS                                                      contents of infra/terraform/environments/<env>.tfvars
+#   TF_STATE_RESOURCE_GROUP, TF_STATE_STORAGE_ACCOUNT           remote state (backend.tf)
+# Repository variable PRIVATE_RUNNER: JSON labels of a runner with a network path to the private endpoints, for example
+#   ["self-hosted","aiq-vnet"] (needs docker, az and jq). Default ubuntu-24.04, which cannot reach the private registry, Foundry or Search.
+name: Deploy environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      plan-only:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    working-directory: solution # the repository root holds the design; the code is in solution/
+
+jobs:
+  deploy:
+    name: deploy ${{ inputs.environment }}
+    runs-on: ${{ fromJSON(vars.PRIVATE_RUNNER || '["ubuntu-24.04"]') }}
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 150
+    env:
+      CANARY_SMOKE_RUNS: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - uses: ./.github/actions/azure-env
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # 1. Platform. Apps stay as they are, or are not created yet: the registry is empty on the first run.
+      - uses: ./.github/actions/terraform
+        with:
+          environment: ${{ inputs.environment }}
+          tfvars: ${{ vars.TFVARS }}
+          state-resource-group: ${{ vars.TF_STATE_RESOURCE_GROUP }}
+          state-storage-account: ${{ vars.TF_STATE_STORAGE_ACCOUNT }}
+          apps: auto
+          plan-only: ${{ inputs.plan-only }}
+
+      # 2. Images, tagged with the commit (never :latest), linux/amd64, built from the repository root.
+      - id: images
+        if: ${{ !inputs.plan-only }}
+        run: |
+          registry="$(jq -r .acr_login_server.value "$RUNNER_TEMP/tf.json")"
+          az acr login --name "$(jq -r .acr_name.value "$RUNNER_TEMP/tf.json")"
+          declare -A dockerfile=([bff]=bff/Dockerfile [mcp-quoting]=mcp/quoting/Dockerfile [mcp-a2ui]=mcp/a2ui/Dockerfile [web]=web/Dockerfile)
+          apps=(bff mcp-quoting mcp-a2ui)
+          if grep -Eq '^deploy_web[[:space:]]*=[[:space:]]*true' <<< "$TFVARS"; then apps+=(web); fi
+          images='{}'
+          for app in "${apps[@]}"; do
+            ref="$registry/$app:$GITHUB_SHA"
+            docker build --platform linux/amd64 -f "${dockerfile[$app]}" -t "$ref" .
+            docker push "$ref"
+            images="$(jq -c --arg k "$app" --arg v "$ref" '. + {($k): $v}' <<< "$images")"
+          done
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+        env:
+          TFVARS: ${{ vars.TFVARS }}
+
+      # 3. Container apps exist from here on.
+      - if: ${{ !inputs.plan-only }}
+        uses: ./.github/actions/terraform
+        with:
+          environment: ${{ inputs.environment }}
+          tfvars: ${{ vars.TFVARS }}
+          state-resource-group: ${{ vars.TF_STATE_RESOURCE_GROUP }}
+          state-storage-account: ${{ vars.TF_STATE_STORAGE_ACCOUNT }}
+          apps: "true"
+          app-images: ${{ steps.images.outputs.images }}
+
+      # 4. New revision per app at 0%, then a canary share. mcp-quoting keeps its quotes in memory: no split, full cut-over.
+      - id: rollout
+        if: ${{ !inputs.plan-only }}
+        run: |
+          group="$(jq -r .resource_group.value "$RUNNER_TEMP/tf.json")"
+          : > "$RUNNER_TEMP/rollout.txt"
+          for app in $(jq -r 'keys[]' <<< "$IMAGES"); do
+            name="$(jq -r --arg k "$app" '.app_names.value[$k]' "$RUNNER_TEMP/tf.json")"
+            canary=10; [ "$app" = mcp-quoting ] && canary=100
+            read -r previous new < <(deploy/aca_rollout.sh release -g "$group" "$name" "$(jq -r --arg k "$app" '.[$k]' <<< "$IMAGES")" "$canary")
+            echo "$name $previous $new" >> "$RUNNER_TEMP/rollout.txt"
+          done
+          echo "group=$group" >> "$GITHUB_OUTPUT"
+        env:
+          IMAGES: ${{ steps.images.outputs.images }}
+
+      # 5. Foundry data plane: approve the private links, knowledge base, toolbox, both agents. Needs the private network path.
+      - if: ${{ !inputs.plan-only }}
+        run: deploy/post_deploy.sh --tf-output "$RUNNER_TEMP/tf.json" approve knowledge-base toolbox agents
+        env:
+          PROMPT_VERSION: main:${{ github.sha }}
+
+      # 6. The agent identity exists only now: give it its roles with a second apply.
+      - id: identity
+        if: ${{ !inputs.plan-only }}
+        run: |
+          principal="$(deploy/post_deploy.sh --tf-output "$RUNNER_TEMP/tf.json" identity)"
+          echo "principal=$principal" >> "$GITHUB_OUTPUT"
+      - if: ${{ !inputs.plan-only }}
+        uses: ./.github/actions/terraform
+        with:
+          environment: ${{ inputs.environment }}
+          tfvars: ${{ vars.TFVARS }}
+          state-resource-group: ${{ vars.TF_STATE_RESOURCE_GROUP }}
+          state-storage-account: ${{ vars.TF_STATE_STORAGE_ACCOUNT }}
+          apps: auto
+          extra-args: -var quote_agent_principal_id=${{ steps.identity.outputs.principal }}
+
+      # 7. Smoke tests through Front Door, then through the canary: several fresh sessions so both revisions answer.
+      - id: smoke
+        if: ${{ !inputs.plan-only }}
+        run: |
+          deploy/post_deploy.sh --tf-output "$RUNNER_TEMP/tf.json" smoke
+          for _ in $(seq 1 "$CANARY_SMOKE_RUNS"); do
+            uv run --project deploy --extra azure python deploy/smoke_test.py --checks turn --bff-url "https://$(jq -r .frontdoor_hostname.value "$RUNNER_TEMP/tf.json")"
+          done
+
+      # 8. Promote, or go back to the previous revisions. Rolling back a finished release: see "Rollback" in infra/README.md.
+      - name: Promote revisions
+        if: ${{ !inputs.plan-only && success() }}
+        run: |
+          while read -r name previous new; do deploy/aca_rollout.sh finish -g "$GROUP" "$name" "$new" "$previous"; done < "$RUNNER_TEMP/rollout.txt"
+        env:
+          GROUP: ${{ steps.rollout.outputs.group }}
+      - name: Roll back revisions
+        if: ${{ !inputs.plan-only && failure() }}
+        run: |
+          [ -s "$RUNNER_TEMP/rollout.txt" ] || exit 0
+          while read -r name previous new; do deploy/aca_rollout.sh rollback -g "$GROUP" "$name" "$new" "$previous"; done < "$RUNNER_TEMP/rollout.txt"
+        env:
+          GROUP: ${{ steps.rollout.outputs.group }}

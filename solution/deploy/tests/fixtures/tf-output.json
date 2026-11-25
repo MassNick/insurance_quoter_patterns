@@ -1,0 +1,65 @@
+{
+  "foundry_project_endpoint": {
+    "value": "https://aif-aiq-dev-cc-ab12.services.ai.azure.com/api/projects/auto-quoting"
+  },
+  "search_endpoint": {
+    "value": "https://srch-aiq-dev-cc-ab12.search.windows.net"
+  },
+  "kb_storage_id": {
+    "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-fake/providers/Microsoft.Storage/storageAccounts/stfakekb"
+  },
+  "app_fqdns": {
+    "value": {
+      "mcp-quoting": "ca-mcp-quoting-aiq-dev-cc.x.canadacentral.azurecontainerapps.io",
+      "mcp-a2ui": "ca-mcp-a2ui-aiq-dev-cc.x.canadacentral.azurecontainerapps.io",
+      "bff": "ca-bff.x"
+    }
+  },
+  "model_deployments": {
+    "value": {
+      "main": {
+        "deployment": "m1",
+        "model": "gpt-x"
+      },
+      "memory": {
+        "deployment": "m2",
+        "model": "gpt-y"
+      },
+      "document": {
+        "deployment": "m3",
+        "model": "gpt-5.6-luna"
+      },
+      "embedding": {
+        "deployment": "emb",
+        "model": "text-embedding-3-large"
+      }
+    }
+  },
+  "toolbox_mcp_url": {
+    "value": "https://aif-aiq-dev-cc-ab12.services.ai.azure.com/api/projects/auto-quoting/toolboxes/auto-quoting-toolbox/mcp?api-version=v1"
+  },
+  "kb_mcp_url": {
+    "value": "https://srch.search.windows.net/knowledgebases/auto-quoting-kb/mcp?api-version=2026-11-01-preview"
+  },
+  "cosmos_endpoint": {
+    "value": "https://cosmos.documents.azure.com:443/"
+  },
+  "cosmos_database": {
+    "value": "quoting"
+  },
+  "guardrail_ids": {
+    "value": {
+      "quoting-guardrail": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/aif/raiPolicies/quoting-guardrail",
+      "document-guardrail": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/aif/raiPolicies/document-guardrail"
+    }
+  },
+  "frontdoor_hostname": {
+    "value": "ep-aiq-dev-cc.z01.azurefd.net"
+  },
+  "private_link_approval_targets": {
+    "value": [
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-fake/providers/Microsoft.Storage/storageAccounts/stfakekb",
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-fake/providers/Microsoft.CognitiveServices/accounts/aif-fake"
+    ]
+  }
+}

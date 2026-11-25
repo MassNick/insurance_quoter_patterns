@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quote Journey Flow</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --fg: #1d2330; --muted: #5d6677; --line: #d9dee7;
+  --lane-a: #ffffff; --lane-b: #f1f4f8; --lane-label: #e8edf4; --phase: #e3e9f3; --phase-fg: #2b3a55;
+  --task: #f4f1ff; --task-stroke: #7a5cf0; --user: #eef6ff; --user-stroke: #2f7fe0;
+  --service: #ecfaf6; --service-stroke: #13987a; --db: #fff7e8; --db-stroke: #c98512;
+  --gw: #fffbe6; --gw-stroke: #b38a00; --ev-start: #2e9d58; --ev-end: #c2413a; --ev-mid: #2f7fe0;
+  --edge: #6b7486; --edge-data: #c98512; --label-bg: #f6f7f9;
+  --chip-tool: #dff3ec; --chip-tool-fg: #0d6b55; --chip-a2ui: #ebe5ff; --chip-a2ui-fg: #4b33b8;
+  --llm: #7a5cf0; --llm-fg: #ffffff; --sel: #ff7a1a; --focus: #2f7fe0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11141a; --panel: #181c24; --fg: #e6e9ef; --muted: #9aa3b4; --line: #2b3240;
+    --lane-a: #151920; --lane-b: #191e27; --lane-label: #1e2430; --phase: #232b3a; --phase-fg: #c9d4ea;
+    --task: #241f3d; --task-stroke: #9d86ff; --user: #16263b; --user-stroke: #5aa2ff;
+    --service: #12302a; --service-stroke: #3cc7a4; --db: #33280f; --db-stroke: #e0a73d;
+    --gw: #2f2a12; --gw-stroke: #e0c04d; --ev-start: #4cc07a; --ev-end: #ef6b63; --ev-mid: #5aa2ff;
+    --edge: #8b94a7; --edge-data: #e0a73d; --label-bg: #11141a;
+    --chip-tool: #133a30; --chip-tool-fg: #7fe0c4; --chip-a2ui: #2a2350; --chip-a2ui-fg: #c3b6ff;
+    --llm: #9d86ff; --llm-fg: #11141a; --sel: #ff9a4d; --focus: #5aa2ff;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { padding: 16px 20px 10px; display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: flex-end; justify-content: space-between; }
+header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.stats { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12.5px; }
+.stats b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 0 20px 10px; }
+.toolbar input[type=search] { min-width: 260px; flex: 1 1 260px; max-width: 420px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); font: inherit; }
+.toolbar button { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer; }
+.toolbar button:hover { border-color: var(--focus); }
+.toolbar button:focus-visible, .toolbar input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.zoomval { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 0 20px 12px; color: var(--muted); font-size: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.scroller { overflow: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--lane-a); max-height: calc(100vh - 170px); min-height: 360px; }
+.canvas { display: flex; width: max-content; }
+.lanelabels { position: sticky; left: 0; z-index: 3; flex: 0 0 auto; width: 156px; background: var(--lane-label); border-right: 1px solid var(--line); }
+.lanelabels div { display: flex; align-items: center; padding: 0 12px; font-weight: 600; font-size: 12.5px; border-bottom: 1px solid var(--line); line-height: 1.25; }
+.lanelabels .ph { font-weight: 600; color: var(--phase-fg); background: var(--phase); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+svg text { fill: var(--fg); }
+.node { cursor: pointer; }
+.node:focus { outline: none; }
+.node:focus-visible .shape, .node.sel .shape { stroke: var(--sel) !important; stroke-width: 3 !important; }
+.dim { opacity: .18; }
+.edge path { fill: none; stroke: var(--edge); stroke-width: 1.4; }
+.edge.data path { stroke: var(--edge-data); stroke-dasharray: 5 4; }
+.edge.loop path { stroke-dasharray: 2 3; }
+.edge.hl path { stroke: var(--sel); stroke-width: 2.4; }
+.edge text { font-size: 10px; fill: var(--muted); }
+.edge rect { fill: var(--label-bg); }
+.chip text { font-size: 9.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.chip.tool rect { fill: var(--chip-tool); } .chip.tool text { fill: var(--chip-tool-fg); }
+.chip.a2ui rect { fill: var(--chip-a2ui); } .chip.a2ui text { fill: var(--chip-a2ui-fg); }
+.chip.more text { fill: var(--muted); }
+#details { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); transform: translateX(105%); transition: transform .22s ease; z-index: 10; overflow: auto; padding: 18px 20px 28px; }
+#details.open { transform: translateX(0); }
+#details h2 { font-size: 17px; margin: 4px 0 2px; }
+#details .meta { color: var(--muted); font-size: 12.5px; }
+#details dl { margin: 14px 0 0; }
+#details dt { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 12px; }
+#details dd { margin: 4px 0 0; }
+#details code, td code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; background: var(--lane-b); padding: 1px 5px; border-radius: 4px; display: inline-block; margin: 1px 2px 1px 0; word-break: break-all; }
+#details .close { position: absolute; top: 12px; right: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 8px; padding: 4px 9px; cursor: pointer; font: inherit; }
+#details .nav { display: flex; gap: 8px; margin-top: 18px; }
+#details .nav button { border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 8px; padding: 5px 10px; cursor: pointer; font: inherit; }
+section.tablewrap { padding: 16px 20px 40px; }
+section.tablewrap summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 12.5px; background: var(--panel); }
+th, td { border: 1px solid var(--line); padding: 6px 8px; vertical-align: top; text-align: left; }
+th { background: var(--lane-label); position: sticky; top: 0; }
+td.id { white-space: nowrap; font-weight: 600; }
+tr:hover td { background: var(--lane-b); cursor: pointer; }
+.none { color: var(--muted); }
+@media (max-width: 640px) {
+  header { padding: 12px 16px 8px; } .toolbar, .legend { padding-left: 16px; padding-right: 16px; }
+  .lanelabels { width: 104px; } .lanelabels div { font-size: 11px; padding: 0 8px; }
+  section.tablewrap { padding: 12px 16px 32px; overflow-x: auto; }
+}
+@media (prefers-reduced-motion: reduce) { #details { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Auto quote journey: BPMN-style process flow</h1>
+    <div class="sub">Design artifact · Azure AI Foundry hosted agent, A2UI over MCP · decisions D1–D20 · simulated, no live calls</div>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+<div class="toolbar">
+  <input type="search" id="q" placeholder="Highlight a tool, A2UI message, state path or event (e.g. render_form, /drivers, confirm.required)" aria-label="Highlight steps">
+  <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+  <span class="zoomval" id="zval">100%</span>
+  <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+  <button id="zfit" title="Fit lanes to the window height">Fit height</button>
+  <button id="z100">100%</button>
+</div>
+<div class="legend" id="legend"></div>
+<div class="scroller" id="scroller">
+  <div class="canvas" id="canvas">
+    <div class="lanelabels" id="lanelabels"></div>
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Swimlane process diagram"></svg>
+  </div>
+</div>
+<section class="tablewrap">
+  <details open>
+    <summary>Every step: tool calls, A2UI calls, state and events</summary>
+    <div style="overflow-x:auto"><table id="table"></table></div>
+  </details>
+</section>
+<aside id="details" aria-live="polite" aria-label="Step details"></aside>
+
+<script>
+const FLOW = /* <flow-data> */ {
+  "title": "Auto quote journey",
+  "lanes": [
+    {"id": "customer", "label": "Customer"},
+    {"id": "frontend", "label": "Frontend (React + A2UI renderer)"},
+    {"id": "bff", "label": "BFF (FastAPI, Container Apps)"},
+    {"id": "main", "label": "Hosted agent: Main agent"},
+    {"id": "memory", "label": "Hosted agent: Memory agent"},
+    {"id": "mcp", "label": "Toolbox / MCP servers (quoting, a2ui)"},
+    {"id": "iq", "label": "Foundry IQ"},
+    {"id": "doc", "label": "Document agent (gpt-5.6-luna)"},
+    {"id": "cosmos", "label": "Cosmos DB"}
+  ],
+  "phases": [
+    {"label": "1 · Intent", "from": 0, "to": 16},
+    {"label": "2 · Gather", "from": 17, "to": 84},
+    {"label": "3 · Advise", "from": 85, "to": 99},
+    {"label": "Event sub-process: off-topic message (any turn)", "from": 101, "to": 105},
+    {"label": "Event sub-processes: end-of-form rules (after any commit) and advisor hand-off", "from": 107, "to": 122},
+    {"label": "Event sub-process: reopen a form chip or full-form mode (no model call)", "from": 124, "to": 131}
+  ],
+  "nodes": [
+    {"id": "P01", "lane": "customer", "col": 0, "type": "start", "name": "Opens the quote page", "what": "Customer lands on the quote page. The session starts anonymous; sign-in with Entra External ID can come later.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P02", "lane": "frontend", "col": 1, "type": "task", "name": "Start session, warm up agent", "what": "POST /api/sessions. The page opens in the Variation C shell (D12): dark-green header with the Conversation | Formulaire complet toggle and the Parler à un conseiller button, step chips, a collapsed Votre dossier panel. The BFF also sends input.kind=warmup to the hosted agent (no model call), so the first real turn does not hit 424 session_not_ready.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P03", "lane": "bff", "col": 2, "type": "service", "name": "Create session + static greeting", "what": "Creates the state document and returns a templated greeting in French (fr-CA) with generic suggestions. The greeting is not generated by a model.", "tools": [], "a2ui": [], "state": ["/phase = intent"], "events": ["text.done", "suggestions"], "calls": 0},
+    {"id": "P04", "lane": "cosmos", "col": 2, "type": "service", "icon": "db", "name": "sessions + events: create", "what": "Inserts the state document (partition key /session_id) and the first rows in events.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P05", "lane": "frontend", "col": 3, "type": "user", "name": "Greeting with suggestion bubbles", "what": "Shows the greeting. Suggestions show as bubbles above the composer (D15): Get a quote for my car; Compare with my current insurer; Add a vehicle to my policy; I have a coverage question. (Customer-facing text is French in the product; English here.)", "tools": [], "a2ui": [], "state": [], "events": ["text.done", "suggestions"], "calls": 0},
+    {"id": "P06", "lane": "customer", "col": 4, "type": "user", "name": "Clicks 'Get a quote for my car'", "what": "The clicked suggestion is sent as a user message with via=suggestion. The frontend shows the 3 animated dots at once.", "tools": [], "a2ui": [], "state": [], "events": ["user.message"], "calls": 0},
+    {"id": "P07", "lane": "bff", "col": 5, "type": "service", "name": "Log input, build turn, invoke agent", "what": "Writes the inbound event, loads state (cache, then Cosmos on a miss), mints a 15-minute session_ref and calls the invocations endpoint with SSE.", "tools": [], "a2ui": [], "state": [], "events": ["turn.started"], "calls": 0},
+    {"id": "P08", "lane": "main", "col": 6, "type": "gateway", "variant": "parallel", "name": "Run memory and main together", "what": "The hosted agent loads history (CosmosHistoryProvider, agent_history) and starts both agents with asyncio.gather.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P09", "lane": "main", "col": 7, "type": "task", "name": "INTENT: confirm goal, ask consent", "what": "Confirms the goal in one sentence and asks for consent to use the customer's information. Ends with suggestions: Yes, I agree; Tell me more first.", "tools": ["ui.set_phase", "ui.suggest_replies"], "a2ui": [], "state": [], "events": ["phase", "text.delta", "text.done", "suggestions"], "calls": 1, "calls_note": "main"},
+    {"id": "P10", "lane": "memory", "col": 7, "type": "task", "name": "Extract quote_goal", "what": "Returns MemoryAgentOutput with state_changes and intent.phase_hint=intent.", "tools": [], "a2ui": [], "state": ["/quote/quote_goal = new_quote (chat, inferred, 0.95)"], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P11", "lane": "main", "col": 8, "type": "gateway", "variant": "parallel", "name": "Join, save history", "what": "Waits for both agents, appends history, emits turn.completed with model_calls=2 and token usage (including cached tokens).", "tools": [], "a2ui": [], "state": [], "events": ["turn.completed"], "calls": 0, "calls_note": "turn total: 2"},
+    {"id": "P12", "lane": "bff", "col": 9, "type": "service", "name": "Merge memory result, relay", "what": "Applies the merge rules in contracts/events.md, runs the end-of-form rules on the commit batch (no hit here), drops any suggestion item that breaks D15 (PII, names, values the customer has not given, over 40 characters), relays text and suggestions, writes the state document, a state_changes row and the events.", "tools": [], "a2ui": [], "state": ["/quote/quote_goal"], "events": ["state.delta", "signals", "turn.completed"], "calls": 0},
+    {"id": "P13", "lane": "cosmos", "col": 9, "type": "service", "icon": "db", "name": "sessions, state_changes, events, agent_history", "what": "State document replaced with an _etag check; append-only state_changes row; events rows; agent history saved by the hosted agent identity.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P14", "lane": "customer", "col": 10, "type": "user", "name": "Clicks 'Yes, I agree'", "what": "Consent given in chat. Turn 2 runs the same way as P07 to P11.", "tools": [], "a2ui": [], "state": [], "events": ["user.message"], "calls": 0},
+    {"id": "P15", "lane": "memory", "col": 11, "type": "task", "name": "Propose contact_consent = true", "what": "The memory agent proposes the consent value. It cannot commit it: the field is deterministic.", "tools": [], "a2ui": [], "state": ["/quote/contact_consent = true (chat, proposed, 0.95)"], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P16", "lane": "main", "col": 11, "type": "task", "name": "Acknowledge; do not ask again", "what": "Thanks the customer and says a window will ask them to confirm. The prompt forbids asking for consent a second time.", "tools": ["ui.suggest_replies"], "a2ui": [], "state": [], "events": ["text.delta", "text.done", "suggestions"], "calls": 1, "calls_note": "main"},
+    {"id": "P17", "lane": "bff", "col": 12, "type": "gateway", "variant": "exclusive", "name": "Deterministic field changed?", "what": "contact_consent is deterministic in the catalog. If it changed, the BFF holds it as pending_confirmation, writes a confirmations row (TTL 900 s) and emits confirm.required. If not (the customer asked to know more), the agent explains and asks again.", "tools": [], "a2ui": [], "state": ["/quote/contact_consent (pending_confirmation)"], "events": ["confirm.required"], "calls": 0},
+    {"id": "P18", "lane": "frontend", "col": 13, "type": "user", "name": "Double-confirm popup", "what": "Step 1: plain-language summary of what is shared and why. Step 2: an explicit second confirmation. Closing the popup counts as a refusal.", "tools": [], "a2ui": [], "state": [], "events": ["confirm.response (step 1)", "confirm.response (step 2)"], "calls": 0},
+    {"id": "P19", "lane": "customer", "col": 14, "type": "gateway", "variant": "exclusive", "name": "Accepted both steps?", "what": "Both steps must be accepted for the value to commit.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P20", "lane": "bff", "col": 15, "type": "service", "name": "Revert; log confirm.rejected", "what": "Drops the pending value and logs confirm.rejected. The next agent turn (input.kind=confirmation_result) explains that a quote needs consent and offers an advisor call.", "tools": [], "a2ui": [], "state": ["/quote/contact_consent reverted to previous value"], "events": ["state.delta", "text.delta", "suggestions"], "calls": 0, "calls_note": "next turn: 2 (main + memory)"},
+    {"id": "E1", "lane": "customer", "col": 16, "type": "end", "name": "Ends without consent", "what": "Session kept for 90 days (proposed TTL) so the customer can come back.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P21", "lane": "bff", "col": 16, "type": "service", "name": "Commit consent; rule check; invoke agent", "what": "Commits the value with status confirmed and both step timestamps in confirmations. Runs the end-of-form rules on the batch. Invokes the agent with input.kind=confirmation_result.", "tools": [], "a2ui": [], "state": ["/quote/contact_consent = true (confirmed)"], "events": ["state.delta", "turn.started"], "calls": 0},
+    {"id": "P22", "lane": "main", "col": 17, "type": "task", "name": "GATHER: offer documents once", "what": "Sets the phase to gather. Says once that the customer can answer by text or ask for forms, and never asks them to choose (D14). Offers once to read the driver's licence, registration certificate and current policy to pre-fill (D13). Suggestions: Yes, I have my documents; Only some of them; I don't have them.", "tools": ["ui.set_phase", "ui.suggest_replies"], "a2ui": [], "state": [], "events": ["phase", "text.delta", "suggestions"], "calls": 2, "calls_note": "main + memory (memory not drawn)"},
+    {"id": "P23", "lane": "customer", "col": 18, "type": "gateway", "variant": "exclusive", "name": "Read documents?", "what": "Yes or only some: the DocumentDrop form opens. No: the agent gathers through chat and subject forms and never offers again.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P24", "lane": "main", "col": 19, "type": "task", "name": "Open DocumentDrop", "what": "FormSpec documents with one document_drop field (D18). One sentence says what it is for.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(documents) → createSurface (components + dataModel)"], "state": [], "events": ["tool.call", "a2ui.message", "text.delta"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P25", "lane": "mcp", "col": 20, "type": "service", "name": "a2ui: compile DocumentDrop", "what": "DocumentDrop with three tiles: driver's licence (licence), registration certificate (registration), current policy (declaration).", "tools": [], "a2ui": ["createSurface(documents)"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P26", "lane": "customer", "col": 21, "type": "user", "name": "Uploads documents on the tiles", "what": "Each tile posts the file to /api/sessions/{sid}/documents with its purpose and surface_id=documents. Tiles the customer does not have stay empty.", "tools": [], "a2ui": ["callAgentFunction extractDocument (documents)"], "state": [], "events": ["document.uploaded"], "calls": 0},
+    {"id": "P27", "lane": "bff", "col": 22, "type": "service", "name": "Scan, then extract each file", "what": "Saves each file to Blob uploads (private); Defender for Storage scans it; the BFF then calls the document agent once per file.", "tools": ["document.extract (BFF only)"], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P28", "lane": "doc", "col": 23, "type": "task", "name": "Read licence, registration, policy", "what": "Strict schema per purpose. Licence: name, date of birth, address, licence number. Registration: year, make, model, VIN. Policy: insurer, years insured, listed drivers and vehicles. Instructions inside a document are ignored.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 1, "calls_note": "document agent, once per file"},
+    {"id": "P29", "lane": "bff", "col": 24, "type": "service", "name": "Show extracted fields for review", "what": "Sends the extracted fields with their confidence to the documents surface. Nothing is committed yet (D18).", "tools": [], "a2ui": ["updateDataModel(documents)"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "P30", "lane": "customer", "col": 25, "type": "user", "name": "Reviews, edits, submits", "what": "Corrects any field, then Continuer. 'Continuer sans documents' closes the form and commits nothing.", "tools": [], "a2ui": ["action submit (documents)"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P31", "lane": "bff", "col": 26, "type": "service", "name": "Commit reviewed values; rule check", "what": "Validates and commits with source=document. A licence number waits for the double confirmation (FR-DOC-7). Runs the end-of-form rules on the batch, sends deleteSurface (chip submitted) and invokes the agent with form_submitted.", "tools": [], "a2ui": ["deleteSurface(documents)"], "state": ["/quote/first_name", "/quote/last_name", "/quote/date_of_birth", "/quote/address_line1 … /quote/postal_code", "/vehicles/0/vehicle_year", "/vehicles/0/vehicle_make", "/vehicles/0/vehicle_model", "/vehicles/0/vin", "/drivers/0/years_with_current_insurer", "/drivers/N (add_entity, from the policy)", "/drivers/0/driver_license_number (pending_confirmation)"], "events": ["state.delta", "a2ui.message", "confirm.required", "turn.started"], "calls": 0},
+    {"id": "P32", "lane": "customer", "col": 27, "type": "gateway", "variant": "exclusive", "name": "Merge", "what": "The document and no-document paths join.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P33", "lane": "main", "col": 28, "type": "gateway", "variant": "exclusive", "name": "Chat or small form?", "what": "For each subject in order (Vous, Véhicule, Conducteurs, Antécédents): with answer_mode=text, or when only one or two short answers are missing, the agent asks in chat. With answer_mode=forms, or several structured fields missing, it opens a small subject form (at most about 5 fields). The chat path is drawn once, for Vous.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P34", "lane": "main", "col": 29, "type": "task", "name": "Ask in chat, one question per turn", "what": "The text-first default (D13). One question per turn with generic suggestions. Validates answers with lookup tools, for example quoting.identify_address for an address given in chat.", "tools": ["quoting.identify_address", "ui.suggest_replies"], "a2ui": [], "state": [], "events": ["tool.call", "tool.result", "text.delta", "suggestions"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P35", "lane": "customer", "col": 30, "type": "user", "name": "Answers in chat", "what": "For example: 'Marie Tremblay, born 18 January 1987'. The customer may also state how they want to answer: 'je préfère les formulaires'.", "tools": [], "a2ui": [], "state": [], "events": ["user.message"], "calls": 0},
+    {"id": "P36", "lane": "memory", "col": 31, "type": "task", "name": "Extract answers; capture answer_mode", "what": "Returns state_changes for the answers, and session_preferences.answer_mode when the customer states a preference (D14). null otherwise.", "tools": [], "a2ui": [], "state": ["/quote/first_name, /quote/last_name, /quote/date_of_birth (chat, inferred)", "session_preferences.answer_mode = forms (if stated)"], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P37", "lane": "bff", "col": 32, "type": "service", "name": "Merge, store preference, rule check", "what": "Merges the memory changes, stores a stated answer_mode in the session document and emits session.preferences, then runs the end-of-form rules on the batch. The next invocation carries PREFERENCES.", "tools": [], "a2ui": [], "state": ["/quote/*", "session_preferences.answer_mode"], "events": ["state.delta", "session.preferences"], "calls": 0},
+    {"id": "P38", "lane": "main", "col": 33, "type": "task", "name": "Open the small 'Vous' form", "what": "Used when several structured fields of the Vous subject are still missing, or answer_mode=forms. FormSpec policyholder_contact, at most 5 fields: date of birth, address lookup, email, phone, phone type. Values from documents and chat are prefilled with a note. Name, gender and coverage start date stay in chat.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(policyholder_contact) → createSurface (components + dataModel)"], "state": [], "events": ["tool.call", "tool.result", "a2ui.message", "text.delta", "suggestions"], "calls": 2, "calls_note": "main + memory (memory not drawn: no field changes)"},
+    {"id": "P39", "lane": "mcp", "col": 34, "type": "service", "name": "a2ui: compile FormSpec to A2UI 1.0", "what": "Validates the FormSpec, resolves keys against the state catalog, builds components with checks, and returns one createSurface (components + dataModel, version 1.0) as an EmbeddedResource (application/a2ui+json, audience user). The model sees only {surface_id, status: shown}; the hosted agent forwards the FormSpec with the message so the BFF can reopen the form later (D16).", "tools": [], "a2ui": ["createSurface(policyholder_contact)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result", "a2ui.message"], "calls": 0},
+    {"id": "P40", "lane": "frontend", "col": 35, "type": "task", "name": "Open animation, render form", "what": "Chat slides left. A ball leaves the bot avatar, moves right and expands into the form. A chip 'Formulaire : Vous' (state open) is added to the transcript. The data model is bound to state paths.", "tools": [], "a2ui": ["render createSurface (one A2UI 1.0 message)"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "P41", "lane": "customer", "col": 36, "type": "user", "name": "Types postal code, Find address", "what": "The AddressLookup component sends A2UI 1.0 callAgentFunction identifyAddress to the BFF. No agent turn starts.", "tools": [], "a2ui": ["callAgentFunction identifyAddress"], "state": [], "events": [], "calls": 0},
+    {"id": "P42", "lane": "bff", "col": 37, "type": "service", "name": "Answer callAgentFunction (no model)", "what": "BFF managed identity calls mcp-quoting with app role Lookup.Read. Logged as tool.call and tool.result with actor=bff. Replies with agentFunctionResponse.", "tools": ["quoting.identify_address"], "a2ui": ["agentFunctionResponse → candidates"], "state": [], "events": ["tool.call", "tool.result"], "calls": 0},
+    {"id": "P43", "lane": "mcp", "col": 37, "type": "service", "name": "identify_address", "what": "Returns up to 5 normalized Canadian address candidates. Cached 24 h by normalized query.", "tools": ["quoting.identify_address"], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P44", "lane": "customer", "col": 38, "type": "user", "name": "Picks address, submits form", "what": "Client-side checks run first (required, regex, ranges). Submit sends only changed paths.", "tools": [], "a2ui": ["action submit (policyholder_contact)"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P45", "lane": "bff", "col": 39, "type": "gateway", "variant": "exclusive", "name": "Valid against catalog?", "what": "Server-side validation: postal code, email and phone patterns, enums, age 16 or more, start date within 90 days.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P46", "lane": "frontend", "col": 40, "type": "task", "name": "Show field errors", "what": "The BFF sends updateDataModel on the reserved /_errors path. The form stays open.", "tools": [], "a2ui": ["updateDataModel(policyholder_contact, /_errors)"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "P47", "lane": "bff", "col": 40, "type": "service", "name": "Commit; rule check; close form", "what": "Commits values with source=form, status=confirmed, runs the end-of-form rules on the batch, and sends deleteSurface (chip becomes submitted). Invokes the agent with input.kind=form_submitted.", "tools": [], "a2ui": ["deleteSurface(policyholder_contact)"], "state": ["/quote/date_of_birth", "/quote/email", "/quote/phone_number", "/quote/phone_type", "/quote/address_line1", "/quote/city", "/quote/province_code", "/quote/postal_code"], "events": ["state.delta", "a2ui.message", "turn.started"], "calls": 0},
+    {"id": "P48", "lane": "frontend", "col": 41, "type": "task", "name": "Reverse animation", "what": "The form fades, shrinks to a ball, returns to the bot icon. The chat recenters.", "tools": [], "a2ui": ["render deleteSurface"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "P49", "lane": "customer", "col": 42, "type": "gateway", "variant": "exclusive", "name": "Merge", "what": "The chat path and the form path for the subject join. The next subject follows the same pattern.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P50", "lane": "main", "col": 43, "type": "task", "name": "Open the small vehicle form", "what": "Text first: when the registration was read, only the usage is missing and the agent asks in chat. Otherwise FormSpec vehicle_N, at most 5 fields: YMM picker (cascading, validated through callAgentFunction lookupMakeModelYear), usage, kilometres per year, parking, acquisition. Other details are asked in chat.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(vehicle_0) → createSurface (components + dataModel)"], "state": [], "events": ["tool.call", "a2ui.message", "text.delta", "suggestions"], "calls": 2, "calls_note": "main + memory (memory not drawn)"},
+    {"id": "P51", "lane": "mcp", "col": 44, "type": "service", "name": "a2ui: compile vehicle_0", "what": "Expands the ymm widget to YmmPicker, km to Slider, booleans to Yes/No ChoicePicker.", "tools": [], "a2ui": ["createSurface(vehicle_0)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P52", "lane": "customer", "col": 45, "type": "user", "name": "Types: '2019 Civic, 3 of us drive it'", "what": "The customer answers in chat while the form is open.", "tools": [], "a2ui": [], "state": [], "events": ["user.message"], "calls": 0},
+    {"id": "P53", "lane": "memory", "col": 46, "type": "task", "name": "Extract YMM + 2 drivers; signals", "what": "Extracts year, make and model and adds two driver entities. Raises signals: 3 drivers for 1 car means the household may have more vehicles.", "tools": [], "a2ui": [], "state": ["/vehicles/0/vehicle_make_model = 'Honda Civic'", "/vehicles/0/vehicle_year = 2019", "/vehicles/0/vehicle_make = Honda", "/vehicles/0/vehicle_model = Civic", "/drivers/1 (add_entity)", "/drivers/2 (add_entity)"], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P54", "lane": "main", "col": 46, "type": "task", "name": "Validate YMM, acknowledge", "what": "Calls the lookup tools as terminal tools: results go to state (source=lookup) and the open form. No follow-up completion.", "tools": ["quoting.lookup_make_model_year", "quoting.identify_vehicle_type", "ui.suggest_replies"], "a2ui": [], "state": [], "events": ["tool.call", "tool.result", "text.delta", "suggestions"], "calls": 1, "calls_note": "main"},
+    {"id": "P55", "lane": "mcp", "col": 47, "type": "service", "name": "Look up YMM + vehicle type", "what": "Normalizes Honda / Civic / 2019, returns trims, classifies the vehicle as a car.", "tools": ["quoting.lookup_make_model_year", "quoting.identify_vehicle_type"], "a2ui": [], "state": ["/vehicles/0/vehicle_type = car (lookup)"], "events": ["tool.result"], "calls": 0},
+    {"id": "P56", "lane": "bff", "col": 48, "type": "service", "name": "Merge; live autofill of open form", "what": "Merges memory and lookup results, runs the end-of-form rules on the batch, and pushes the values into the open vehicle_0 surface. Fields show a 'from chat' badge; fields the customer already edited are not overwritten. A make on the exotic list would hit VEHICULE_EXOTIQUE here (inferred, so one confirmation question first; see the end-of-form sub-process).", "tools": [], "a2ui": ["updateDataModel(vehicle_0)"], "state": ["/vehicles/0/*", "/drivers/1", "/drivers/2", "signals: multi_vehicle_likely, additional_driver_likely"], "events": ["state.delta", "signals", "a2ui.message"], "calls": 0},
+    {"id": "P57", "lane": "customer", "col": 49, "type": "gateway", "variant": "exclusive", "name": "Special vehicle case?", "what": "Three paths: the customer uploads a VIN photo, says the household has a fleet of identical vehicles, or just completes the form.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P58", "lane": "customer", "col": 50, "type": "user", "name": "Taps 'Upload VIN photo'", "what": "The VinField photo button (A2UI 1.0 callAgentFunction extractDocument). The file goes to POST /api/sessions/{sid}/documents with purpose=vin and the field path.", "tools": [], "a2ui": ["callAgentFunction extractDocument (vehicle_0)"], "state": [], "events": ["document.uploaded"], "calls": 0},
+    {"id": "P59", "lane": "bff", "col": 51, "type": "service", "name": "Store, scan, call document agent", "what": "Saves the file to Blob uploads (private). Defender for Storage scans it on upload. Calls document-agent through its agent endpoint (Responses, input_image).", "tools": ["document.extract (BFF only)"], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P60", "lane": "doc", "col": 52, "type": "task", "name": "Extract VIN (gpt-5.6-luna)", "what": "Strict-schema output: vin, year, make, model, confidence, bbox, document_ok. Instructions inside the image are ignored.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 1, "calls_note": "document agent"},
+    {"id": "P61", "lane": "bff", "col": 53, "type": "service", "name": "Autofill VIN; invoke agent", "what": "Validates the VIN pattern, stores it with source=document, status=inferred, fills the open field with a 'from photo' badge, then invokes the agent with input.kind=document_extracted.", "tools": [], "a2ui": ["updateDataModel(vehicle_0, /vehicles/0/vin)"], "state": ["/vehicles/0/vin (document, inferred)"], "events": ["state.delta", "a2ui.message", "turn.started"], "calls": 0},
+    {"id": "P62", "lane": "main", "col": 54, "type": "task", "name": "Decode VIN, fill year/make/model", "what": "Calls decode_vin and update_form as terminal tools in one completion. Memory runs in parallel.", "tools": ["quoting.decode_vin", "ui.suggest_replies"], "a2ui": ["a2ui.update_form(vehicle_0) → updateDataModel"], "state": [], "events": ["tool.call", "tool.result", "a2ui.message", "text.delta"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P63", "lane": "mcp", "col": 55, "type": "service", "name": "decode_vin + update_form", "what": "Checks the VIN check digit and returns year, make, model and trim. update_form patches the data model.", "tools": ["quoting.decode_vin"], "a2ui": ["updateDataModel(vehicle_0)"], "state": ["/vehicles/0/vehicle_year, vehicle_make, vehicle_model (lookup)"], "events": ["tool.result"], "calls": 0},
+    {"id": "P64", "lane": "memory", "col": 51, "type": "task", "name": "Signal fleet_detected; add vehicles", "what": "The customer says 'we actually have 10 identical vans'. Memory adds 9 vehicle entities and raises fleet_detected and commercial_use_suspected.", "tools": [], "a2ui": [], "state": ["/vehicles/1 … /vehicles/9 (add_entity)"], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P65", "lane": "main", "col": 52, "type": "task", "name": "Re-shape form: 1 YMM + 10 VIN fields", "what": "Closes vehicle_0 and opens fleet_vins: one YMM field for all, repeat count=10 of the vin field, each with an Upload VIN photo field action. Asks again about usage.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.close_form(vehicle_0) → deleteSurface", "a2ui.render_form(fleet_vins) → createSurface (components + dataModel)"], "state": [], "events": ["tool.call", "a2ui.message", "text.delta"], "calls": 1, "calls_note": "main"},
+    {"id": "P66", "lane": "mcp", "col": 53, "type": "service", "name": "a2ui: close + compile fleet_vins", "what": "Expands repeat into a Repeater with 10 VinField rows bound to /vehicles/0..9/vin.", "tools": [], "a2ui": ["deleteSurface(vehicle_0)", "createSurface(fleet_vins)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P67", "lane": "customer", "col": 56, "type": "gateway", "variant": "exclusive", "name": "Merge", "what": "The three vehicle paths join.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P68", "lane": "customer", "col": 57, "type": "user", "name": "Submits vehicle form", "what": "Sends changed paths only.", "tools": [], "a2ui": ["action submit"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P69", "lane": "bff", "col": 58, "type": "service", "name": "Commit vehicles; rule check; close form", "what": "Same validate-commit-close pattern as P45 to P48, then the end-of-form rules (USAGE_AGRICOLE and VEHICULE_MODIFIE_PERFORMANCE can stop here). Document values become confirmed once submitted in the form.", "tools": [], "a2ui": ["deleteSurface(vehicle_0 or fleet_vins)"], "state": ["/vehicles/N/vehicle_type", "/vehicles/N/vehicle_year", "/vehicles/N/vehicle_make", "/vehicles/N/vehicle_model", "/vehicles/N/vin", "/vehicles/N/acquisition_condition", "/vehicles/N/acquisition_type", "/vehicles/N/vehicle_value", "/vehicles/N/annual_kilometers", "/vehicles/N/usage_type", "/vehicles/N/outside_quebec", "/vehicles/N/parking_place_type_code", "/vehicles/N/parking_hours_code"], "events": ["state.delta", "a2ui.message", "turn.started"], "calls": 0},
+    {"id": "P70", "lane": "main", "col": 59, "type": "task", "name": "Use signal: another vehicle?", "what": "SIGNALS has multi_vehicle_likely (3 drivers, 1 car). The agent asks whether there is another vehicle. Suggestions: No, just the one car; Yes, add a second vehicle.", "tools": ["ui.suggest_replies"], "a2ui": [], "state": [], "events": ["text.delta", "suggestions"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P71", "lane": "customer", "col": 60, "type": "gateway", "variant": "exclusive", "name": "Another vehicle?", "what": "Yes loops back to the vehicle form for /vehicles/1. No continues to drivers.", "tools": [], "a2ui": [], "state": [], "events": ["user.message"], "calls": 0},
+    {"id": "P72", "lane": "main", "col": 61, "type": "task", "name": "Open the small drivers form", "what": "FormSpec additional_drivers: repeat count=2 of driver_name, driver_date_of_birth, relationship_code, age_obtained_license, limited_use_frequency_code (5 per row). Names said in chat or read on the current policy are prefilled. With answer_mode=text the agent asks these in chat instead.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(additional_drivers) → createSurface (components + dataModel)"], "state": [], "events": ["tool.call", "a2ui.message", "text.delta"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P73", "lane": "mcp", "col": 62, "type": "service", "name": "a2ui: compile repeater", "what": "Repeater with 2 rows bound to /drivers/1 and /drivers/2; add and remove row buttons within min and max.", "tools": [], "a2ui": ["createSurface(additional_drivers)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P74", "lane": "customer", "col": 63, "type": "user", "name": "Completes drivers 2–3, submits", "what": "Client checks: age at licence 16 or more and not above current age.", "tools": [], "a2ui": ["action submit"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P75", "lane": "bff", "col": 64, "type": "service", "name": "Commit drivers 2–3; rule check; close form", "what": "Validate, commit with source=form, run the end-of-form rules, deleteSurface (chip submitted), invoke form_submitted.", "tools": [], "a2ui": ["deleteSurface(additional_drivers)"], "state": ["/drivers/1/driver_name", "/drivers/1/driver_date_of_birth", "/drivers/1/relationship_code", "/drivers/1/age_obtained_license", "/drivers/1/limited_use_frequency_code", "/drivers/2/* (same keys)"], "events": ["state.delta", "a2ui.message", "turn.started"], "calls": 0},
+    {"id": "P76", "lane": "main", "col": 65, "type": "task", "name": "Open the small principal-driver form", "what": "FormSpec driver_0, at most 5 fields: licence number (with Upload licence photo, unless the licence was read earlier), age when licensed, licence year, years with current insurer, age became principal driver. Marital status, employment, occupation, education, heavy-vehicle years and foreign licence are short chat questions.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(driver_0) → createSurface (components + dataModel)"], "state": [], "events": ["tool.call", "a2ui.message", "text.delta"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P77", "lane": "mcp", "col": 66, "type": "service", "name": "a2ui: compile driver_0", "what": "The licence field gets a lock icon (deterministic) and the Quebec licence pattern check. years_licensed is a computed, read-only field.", "tools": [], "a2ui": ["createSurface(driver_0)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P78", "lane": "customer", "col": 67, "type": "user", "name": "Fills profile + licence number", "what": "Or uploads a licence photo: same path as P58 to P61 with purpose=licence.", "tools": [], "a2ui": ["action submit"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P79", "lane": "bff", "col": 68, "type": "gateway", "variant": "exclusive", "name": "Licence number changed?", "what": "driver_license_number is deterministic. A new or changed value is held as pending_confirmation.", "tools": [], "a2ui": [], "state": ["/drivers/0/driver_license_number (pending_confirmation)"], "events": ["confirm.required"], "calls": 0},
+    {"id": "P80", "lane": "frontend", "col": 69, "type": "user", "name": "Double-confirm popup", "what": "Shows the masked licence number and asks twice.", "tools": [], "a2ui": [], "state": [], "events": ["confirm.response (step 1)", "confirm.response (step 2)"], "calls": 0},
+    {"id": "P81", "lane": "bff", "col": 70, "type": "service", "name": "Commit; derive years; rule check", "what": "Commits driver_0. Computes years_licensed and years_as_principal_driver in code, never with a model. Runs the end-of-form rules. Answers given in chat reach the same paths through the memory agent.", "tools": [], "a2ui": ["deleteSurface(driver_0)"], "state": ["/drivers/0/driver_license_number (confirmed)", "/drivers/0/age_obtained_license", "/drivers/0/license_year", "/drivers/0/years_licensed (derived)", "/drivers/0/years_with_current_insurer", "/drivers/0/age_became_principal_driver", "/drivers/0/years_as_principal_driver (derived)"], "events": ["state.delta", "a2ui.message", "turn.started"], "calls": 0},
+    {"id": "P82", "lane": "main", "col": 71, "type": "task", "name": "Open the small history form", "what": "FormSpec history (Antécédents): has_claims with a claims repeater (visible_if has_claims), was_denied_or_cancelled, has_convictions_in_past_three_years. When the form is shown, the BFF sets the *_question_asked system flags.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(history) → createSurface (components + dataModel)"], "state": ["/underwriting/claim_question_asked (system)", "/underwriting/denied_or_cancelled_question_asked (system)", "/underwriting/conviction_question_asked (system)"], "events": ["tool.call", "a2ui.message", "state.delta"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P83", "lane": "mcp", "col": 72, "type": "service", "name": "a2ui: compile history", "what": "Yes/No pickers keep 'not answered' distinct from 'no'. The claims repeater starts hidden.", "tools": [], "a2ui": ["createSurface(history)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P84", "lane": "customer", "col": 73, "type": "gateway", "variant": "exclusive", "name": "Any claims?", "what": "Yes shows the claims repeater in the same form (client-side visible_if, no tool call).", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P85", "lane": "frontend", "col": 74, "type": "task", "name": "Show claims repeater", "what": "Rows: date, type, amount, at fault.", "tools": [], "a2ui": ["local visible_if (no message)"], "state": [], "events": [], "calls": 0},
+    {"id": "P86", "lane": "customer", "col": 75, "type": "user", "name": "Submits history", "what": "Sends the answers and any claims rows.", "tools": [], "a2ui": ["action submit"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P87", "lane": "bff", "col": 76, "type": "service", "name": "Hold deterministic answers", "what": "has_claims, was_denied_or_cancelled and has_convictions_in_past_three_years are deterministic. They are held and confirmed together in one double-confirm popup.", "tools": [], "a2ui": [], "state": ["/underwriting/has_claims (pending)", "/underwriting/was_denied_or_cancelled (pending)", "/underwriting/has_convictions_in_past_three_years (pending)"], "events": ["confirm.required"], "calls": 0},
+    {"id": "P88", "lane": "frontend", "col": 77, "type": "user", "name": "Double-confirm popup", "what": "Lists the three answers and asks twice. Refusal returns to the form.", "tools": [], "a2ui": [], "state": [], "events": ["confirm.response (step 1)", "confirm.response (step 2)"], "calls": 0},
+    {"id": "P89", "lane": "bff", "col": 78, "type": "service", "name": "Commit underwriting answers; rule check", "what": "Commits with status confirmed, runs the end-of-form rules (a confirmed yes to was_denied_or_cancelled hits REFUS_OU_RESILIATION, a STOP), closes the form, invokes form_submitted.", "tools": [], "a2ui": ["deleteSurface(history)"], "state": ["/underwriting/has_claims", "/underwriting/claims_detail", "/underwriting/was_denied_or_cancelled", "/underwriting/has_convictions_in_past_three_years"], "events": ["state.delta", "a2ui.message", "turn.started"], "calls": 0},
+    {"id": "P90", "lane": "main", "col": 79, "type": "task", "name": "Open the AssignmentBoard", "what": "FormSpec assignments with one assignment_board field (D17): a pool of drivers and one card per vehicle, each with a Conducteur principal slot (exactly 1) and a Conducteurs occasionnels slot. Used even with answer_mode=text. Prefilled from what was said in chat.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(assignments) → createSurface (components + dataModel)"], "state": [], "events": ["tool.call", "a2ui.message", "text.delta"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P91", "lane": "mcp", "col": 80, "type": "service", "name": "a2ui: compile AssignmentBoard", "what": "AssignmentBoard component with drag and drop, tap-to-place and keyboard alternatives, and auto-scroll while dragging on a phone. Check: onePrincipalPerVehicle.", "tools": [], "a2ui": ["createSurface(assignments)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P92", "lane": "customer", "col": 81, "type": "user", "name": "Drags drivers onto vehicles, submits", "what": "The BFF validates and commits the assignments (role principal or occasional), runs the end-of-form rules (JEUNE_CONDUCTEUR_PRINCIPAL can FLAG here), then closes the form.", "tools": [], "a2ui": ["action submit", "deleteSurface(assignments)"], "state": ["/household/driver_vehicle_assignments (role principal | occasional)"], "events": ["a2ui.action", "state.delta", "rules.hit (if any)"], "calls": 0},
+    {"id": "P93", "lane": "bff", "col": 82, "type": "gateway", "variant": "exclusive", "name": "Quote-ready?", "what": "Every required_for_quote field is set, every deterministic field is confirmed, and no end-of-form STOP stands.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P94", "lane": "main", "col": 83, "type": "task", "name": "Ask for what is missing", "what": "Asks in chat, or opens a small form when several structured fields are missing, then returns to the check.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_form(missing_…) → createSurface (components + dataModel) (if a form is needed)"], "state": [], "events": ["text.delta", "suggestions"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P95", "lane": "main", "col": 84, "type": "task", "name": "Offer 'Get my quote'", "what": "Summarizes in one line and ends with an action suggestion: Get my quote (kind=action, action_id=get_quote).", "tools": ["ui.suggest_replies"], "a2ui": [], "state": [], "events": ["text.delta", "suggestions"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P96", "lane": "customer", "col": 85, "type": "user", "name": "Clicks 'Get my quote'", "what": "Action suggestion.", "tools": [], "a2ui": [], "state": [], "events": ["user.message (action_id=get_quote)"], "calls": 0},
+    {"id": "P97", "lane": "bff", "col": 86, "type": "service", "name": "Re-check readiness; invoke action", "what": "Invokes the agent with input.kind=action, action get_quote, and a fresh session_ref.", "tools": [], "a2ui": [], "state": [], "events": ["turn.started"], "calls": 0},
+    {"id": "P98", "lane": "main", "col": 87, "type": "service", "name": "Pre-execute create_quote", "what": "Button-driven, so orchestrator code calls create_quote before any model call. Middleware injects session_ref; the model never sees it.", "tools": ["quoting.create_quote"], "a2ui": [], "state": [], "events": ["tool.call", "tool.result", "quote.created"], "calls": 0},
+    {"id": "P99", "lane": "mcp", "col": 88, "type": "service", "name": "create_quote: price committed state", "what": "Verifies the session_ref HMAC and expiry, reads the committed state document, calls the rating engine, returns 3 offers and the input snapshot hash.", "tools": ["quoting.create_quote"], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P100", "lane": "cosmos", "col": 88, "type": "service", "icon": "db", "name": "Read sessions (read-only)", "what": "mcp-quoting identity has Cosmos DB Built-in Data Reader on sessions only.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P101", "lane": "main", "col": 89, "type": "task", "name": "ADVISE: recommend, show offers", "what": "The quote is in INPUT. One completion: sets the phase, recommends one offer in 2 to 3 sentences tied to what the customer said, shows the offer cards, ends with suggestions.", "tools": ["ui.set_phase", "ui.suggest_replies"], "a2ui": ["a2ui.render_offers(Q-1) → createSurface (components + dataModel)"], "state": [], "events": ["phase", "text.delta", "a2ui.message", "suggestions"], "calls": 1, "calls_note": "main"},
+    {"id": "P102", "lane": "memory", "col": 89, "type": "task", "name": "Signals: price, bundle", "what": "Reads 'is there anything cheaper?' style cues and 'I also own a condo'.", "tools": [], "a2ui": [], "state": [], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P103", "lane": "mcp", "col": 90, "type": "service", "name": "a2ui: render_offers", "what": "OfferCards for Essential, Plus and Premium with a select button and an adjust panel (deductible, add-ons).", "tools": [], "a2ui": ["createSurface(offers_q_1)", "updateComponents", "updateDataModel"], "state": [], "events": ["tool.result"], "calls": 0},
+    {"id": "P104", "lane": "bff", "col": 91, "type": "service", "name": "Store quote v1; Quotes tab", "what": "Writes the quote version and relays quote.created; the side panel's Quotes tab shows it as current.", "tools": [], "a2ui": [], "state": ["/underwriting/offer_type (unchanged until selection)"], "events": ["quote.created", "turn.completed"], "calls": 0},
+    {"id": "P105", "lane": "cosmos", "col": 91, "type": "service", "icon": "db", "name": "quotes: v1", "what": "Quote id, version, offers and input snapshot hash.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P106", "lane": "customer", "col": 92, "type": "gateway", "variant": "exclusive", "name": "What next?", "what": "Coverage question, adjust the offer, home quote, or select an offer.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P107", "lane": "main", "col": 93, "type": "task", "name": "Answer from knowledge base", "what": "Free-text coverage question. knowledge_base_retrieve is a narrate tool, so one extra completion is used (3 calls in this turn). Answer cites its source.", "tools": ["knowledge.knowledge_base_retrieve", "ui.suggest_replies"], "a2ui": [], "state": [], "events": ["tool.call", "tool.result", "text.delta", "text.done (citations)"], "calls": 3, "calls_note": "main ×2 + memory; counted against the 85% two-call SLO"},
+    {"id": "P108", "lane": "iq", "col": 94, "type": "service", "name": "Agentic retrieval + citations", "what": "Query planning, hybrid search with semantic rerank over the kb-docs index, passages with citations.", "tools": ["knowledge.knowledge_base_retrieve"], "a2ui": [], "state": [], "events": [], "calls": 0, "calls_note": "query planning model runs inside Foundry IQ"},
+    {"id": "P109", "lane": "customer", "col": 93, "type": "user", "name": "Adjusts deductible / add-ons", "what": "Uses the adjust panel on the offer cards.", "tools": [], "a2ui": ["action adjust_offer (offers_q_1)"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P110", "lane": "main", "col": 94, "type": "service", "name": "Pre-execute modify_quote", "what": "Button-driven, so orchestrator code calls modify_quote before the model.", "tools": ["quoting.modify_quote"], "a2ui": [], "state": [], "events": ["tool.call", "tool.result", "quote.updated"], "calls": 0},
+    {"id": "P111", "lane": "mcp", "col": 95, "type": "service", "name": "modify_quote → v2", "what": "Creates a new version; v1 is kept and moves to Past quotes.", "tools": ["quoting.modify_quote"], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P112", "lane": "main", "col": 96, "type": "task", "name": "Narrate the change", "what": "Explains the price difference in one or two sentences and refreshes the offer cards.", "tools": ["ui.suggest_replies"], "a2ui": ["a2ui.render_offers(Q-1 v2) → updateDataModel"], "state": [], "events": ["text.delta", "a2ui.message", "quote.updated"], "calls": 2, "calls_note": "main + memory"},
+    {"id": "P113", "lane": "memory", "col": 95, "type": "task", "name": "Set home-quote interest", "what": "Customer: 'can you also quote my condo?'.", "tools": [], "a2ui": [], "state": ["/underwriting/interested_by_property_quote = true (chat)"], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P114", "lane": "main", "col": 97, "type": "task", "name": "Confirm advisor follow-up", "what": "Home quotes are out of this agent's scope: it confirms an advisor will follow up and keeps the auto quote.", "tools": ["ui.suggest_replies"], "a2ui": [], "state": [], "events": ["text.delta", "suggestions"], "calls": 1, "calls_note": "main"},
+    {"id": "E3", "lane": "customer", "col": 98, "type": "end", "name": "Home lead + auto quote saved", "what": "Lead created for an advisor; auto quote kept in quotes.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P115", "lane": "customer", "col": 96, "type": "user", "name": "Selects the Plus offer", "what": "Clicks Select on an offer card.", "tools": [], "a2ui": ["action select_offer (offers_q_1)"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P116", "lane": "bff", "col": 98, "type": "service", "name": "Set offer_type; close; notify", "what": "Commits the offer, closes open surfaces, writes the final events and notifies an advisor queue.", "tools": [], "a2ui": ["deleteSurface(offers_q_1)"], "state": ["/underwriting/offer_type = plus (form)"], "events": ["state.delta", "a2ui.message"], "calls": 0},
+    {"id": "E2", "lane": "customer", "col": 99, "type": "end", "name": "Quote ready, advisor notified", "what": "The customer sees the selected quote in the Quotes tab.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P117", "lane": "customer", "col": 101, "type": "intermediate", "name": "Off-topic message (any turn)", "what": "For example: 'What will the weather be tomorrow?'. Non-interrupting: the journey resumes after the reply.", "tools": [], "a2ui": [], "state": [], "events": ["user.message"], "calls": 0},
+    {"id": "P118", "lane": "memory", "col": 102, "type": "task", "name": "Flag off_topic", "what": "intent.off_topic = true; no state changes.", "tools": [], "a2ui": [], "state": [], "events": ["memory.result"], "calls": 1, "calls_note": "memory"},
+    {"id": "P119", "lane": "main", "col": 102, "type": "task", "name": "Guardrail reply + next step", "what": "One sentence saying it can only help with the auto quote, then the next quoting step. Foundry guardrails (rai_config) also screen input and output.", "tools": ["ui.suggest_replies"], "a2ui": [], "state": [], "events": ["text.delta", "suggestions"], "calls": 1, "calls_note": "main"},
+    {"id": "P120", "lane": "bff", "col": 103, "type": "service", "name": "Log guardrail; short-circuit", "what": "Logs a guardrail event. After 3 off-topic turns in a row, the BFF sends a canned redirect without calling the agent.", "tools": [], "a2ui": [], "state": [], "events": ["guardrail"], "calls": 0},
+    {"id": "P121", "lane": "frontend", "col": 104, "type": "task", "name": "Show reply and suggestions", "what": "Any open form stays open.", "tools": [], "a2ui": [], "state": [], "events": ["text.done", "suggestions"], "calls": 0},
+    {"id": "E4", "lane": "customer", "col": 105, "type": "end", "variant": "none", "name": "Back to current step", "what": "Non-terminating end of the event sub-process.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P122", "lane": "bff", "col": 107, "type": "start", "name": "Commit batch written (any source)", "what": "Conditional start, non-interrupting: after every commit batch, whatever the source (memory deltas, form or document submit, edit-mode or full-form save, confirmation).", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P123", "lane": "customer", "col": 107, "type": "intermediate", "name": "Clicks 'Parler à un conseiller'", "what": "Header button (D12). user.message with action_id=talk_to_advisor. The BFF handles it alone: no agent call.", "tools": [], "a2ui": [], "state": [], "events": ["user.message"], "calls": 0},
+    {"id": "P124", "lane": "bff", "col": 108, "type": "service", "name": "EndOfFormRules: check", "what": "DEFAULT_RULES.check(merged state, acknowledged) from bff/rules/end_of_form.py, once per batch, synchronous, pure, no model call. Returns the hits not yet acknowledged, STOP first.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P125", "lane": "bff", "col": 109, "type": "gateway", "variant": "exclusive", "name": "Hit?", "what": "No hit: back to the journey. FLAG: advisor signal. STOP: check whether the values are only inferred.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P126", "lane": "bff", "col": 110, "type": "service", "name": "FLAG: add advisor signal", "what": "Adds the hit to advisor_signals (carried into the quote record and any hand-off; not shown to the customer), acknowledges its fingerprint, logs rules.hit, queues a system note. The journey continues.", "tools": [], "a2ui": [], "state": ["advisor_signals"], "events": ["rules.hit"], "calls": 0},
+    {"id": "E5", "lane": "customer", "col": 111, "type": "end", "variant": "none", "name": "Back to the journey", "what": "Non-terminating end of the event sub-process.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P127", "lane": "bff", "col": 111, "type": "gateway", "variant": "exclusive", "name": "Only inferred values?", "what": "needs_confirmation: every matched value of the STOP hit is only inferred from chat.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P128", "lane": "bff", "col": 112, "type": "service", "name": "Ask one confirmation question", "what": "On the chat path, drops the main agent's in-flight reply. Sends a templated question that names the value (text.done, actor bff) with suggestions 'Oui, c'est bien ça' (rule_confirm) and 'Non, je corrige' (rule_correct). Acknowledges the inferred hit.", "tools": [], "a2ui": [], "state": [], "events": ["rules.hit", "text.done", "suggestions"], "calls": 0},
+    {"id": "P129", "lane": "customer", "col": 113, "type": "gateway", "variant": "exclusive", "name": "Confirmed?", "what": "One click on a suggestion. Typing an answer instead also works: the next commit runs the rules again.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P130", "lane": "bff", "col": 114, "type": "service", "name": "Revert; invoke rule_correct", "what": "Reverts the inferred value and invokes the agent with input.kind=action, action_id=rule_correct. The main agent asks for the right value.", "tools": [], "a2ui": [], "state": ["/vehicles/0/vehicle_make (reverted)"], "events": ["state.delta", "turn.started"], "calls": 0, "calls_note": "next turn: 2 (main + memory)"},
+    {"id": "P131", "lane": "bff", "col": 115, "type": "service", "name": "Commit as confirmed; STOP stands", "what": "rule_confirm commits the matched values as confirmed (the state_changes row names the rule). The next check finds a firm hit with a new fingerprint.", "tools": [], "a2ui": [], "state": ["/vehicles/0/vehicle_make (confirmed)"], "events": ["state.delta", "rules.hit"], "calls": 0},
+    {"id": "P132", "lane": "bff", "col": 116, "type": "service", "name": "Close surfaces; build end_of_form", "what": "deleteSurface for every open surface (chips closed); get_quote is blocked. Builds the end_of_form FormSpec: the reason in the session language, the rule id, a templated summary of the conversation (handoff_summary), contact fields and consent to transmit (handoff_consent). For 'Parler à un conseiller' the reason is 'customer request' and there is no rule id.", "tools": [], "a2ui": ["deleteSurface(every open surface)"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "P133", "lane": "mcp", "col": 117, "type": "service", "name": "a2ui: compile end_of_form", "what": "Called by the BFF with its managed identity: no toolbox, no model.", "tools": [], "a2ui": ["createSurface(end_of_form)"], "state": [], "events": [], "calls": 0},
+    {"id": "P134", "lane": "frontend", "col": 118, "type": "task", "name": "Show the end-of-form surface", "what": "Reason, rule id, editable summary, contact fields (prefilled), the consent checkbox, and the buttons Envoyer à un conseiller and Modifier mes réponses.", "tools": [], "a2ui": ["render createSurface (end_of_form)"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "P135", "lane": "customer", "col": 119, "type": "gateway", "variant": "exclusive", "name": "Send or edit?", "what": "Modifier mes réponses closes the surface so the customer can reopen a chip. A commit that clears the hit lifts the STOP.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P136", "lane": "customer", "col": 120, "type": "user", "name": "Edits the summary, consents, sends", "what": "The consent box is required.", "tools": [], "a2ui": ["action send (end_of_form)"], "state": [], "events": ["a2ui.action"], "calls": 0},
+    {"id": "P137", "lane": "bff", "col": 121, "type": "service", "name": "Create hand-off CNS-123456", "what": "Refuses without consent. Writes the handoffs row (reference, reason, rule id, summary as edited, contact details, consent timestamp, advisor signals), emits handoff.created, shows a templated confirmation with the reference, sets the chip to sent and locks the other chips.", "tools": [], "a2ui": ["deleteSurface(end_of_form)"], "state": ["/quote/handoff_summary (form)", "/quote/handoff_consent = true (form)", "/quote/first_name, /quote/last_name, /quote/phone_number, /quote/email (form, if edited)"], "events": ["handoff.created", "text.done", "a2ui.message"], "calls": 0},
+    {"id": "P138", "lane": "cosmos", "col": 121, "type": "service", "icon": "db", "name": "handoffs: create", "what": "One row per hand-off; the advisor system reads it (README Q7).", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "E6", "lane": "customer", "col": 122, "type": "end", "name": "Advisor hand-off sent", "what": "The online quote ends here. The customer has the reference; an advisor continues with the summary.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P139", "lane": "customer", "col": 124, "type": "intermediate", "name": "Clicks a form chip or 'Formulaire complet'", "what": "A chip whose state is submitted or closed (D16), or the header toggle (D20). Non-interrupting.", "tools": [], "a2ui": [], "state": [], "events": ["ui.surface_reopen"], "calls": 0},
+    {"id": "P140", "lane": "bff", "col": 125, "type": "service", "name": "Build the FormSpec in edit mode", "what": "Chip: the FormSpec stored in the surface registry. Full form: a FormSpec built from the catalog, one section per entity, with repeaters for vehicles and drivers. Every prefill comes from committed state; the actions are Save and Cancel.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P141", "lane": "mcp", "col": 126, "type": "service", "name": "a2ui: compile (BFF call)", "what": "render_form on mcp-a2ui with the BFF managed identity: no toolbox, no model.", "tools": [], "a2ui": ["createSurface(vehicle_0 or full_form)"], "state": [], "events": [], "calls": 0},
+    {"id": "P142", "lane": "frontend", "col": 127, "type": "task", "name": "Open animation; chip open", "what": "The same ball-to-form animation. In full-form mode the form takes the whole stage.", "tools": [], "a2ui": ["render createSurface"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "P143", "lane": "customer", "col": 128, "type": "gateway", "variant": "exclusive", "name": "Save or cancel?", "what": "Enregistrer or Annuler; for the full form, switching back to Conversation.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0},
+    {"id": "P144", "lane": "bff", "col": 129, "type": "service", "name": "Validate, commit source=form, rule check", "what": "Catalog validation, merge with source=form (deterministic fields go to confirm.required), the end-of-form rules on the batch, a system note queued for the next turn, deleteSurface (chip submitted). No turn starts.", "tools": [], "a2ui": ["deleteSurface(vehicle_0 or full_form)"], "state": ["changed paths only (form)"], "events": ["a2ui.action", "state.delta", "a2ui.message"], "calls": 0},
+    {"id": "P145", "lane": "bff", "col": 130, "type": "service", "name": "Close without commit", "what": "deleteSurface; the chip keeps its previous state. Unsaved edits are not committed.", "tools": [], "a2ui": ["deleteSurface(vehicle_0 or full_form)"], "state": [], "events": ["a2ui.message"], "calls": 0},
+    {"id": "E7", "lane": "customer", "col": 131, "type": "end", "variant": "none", "name": "Back to the conversation", "what": "Non-terminating end. The next turn's history carries the system note.", "tools": [], "a2ui": [], "state": [], "events": [], "calls": 0}
+  ],
+  "edges": [
+    ["P01", "P02"], ["P02", "P03"], ["P03", "P04", "", "data"], ["P03", "P05"], ["P05", "P06"], ["P06", "P07"],
+    ["P07", "P08"], ["P08", "P09"], ["P08", "P10"], ["P09", "P11"], ["P10", "P11"], ["P11", "P12"],
+    ["P12", "P13", "", "data"], ["P12", "P14", "stream to UI"], ["P14", "P15", "turn 2"], ["P14", "P16"], ["P15", "P17"], ["P16", "P17"],
+    ["P17", "P18", "yes"], ["P17", "P14", "no: explain, ask again"], ["P18", "P19"], ["P19", "P20", "no"], ["P20", "E1"], ["P19", "P21", "yes"],
+    ["P21", "P22"], ["P22", "P23"], ["P23", "P24", "yes or some"], ["P23", "P32", "no"], ["P24", "P25"], ["P25", "P26"],
+    ["P26", "P27"], ["P27", "P28"], ["P28", "P29"], ["P29", "P30"], ["P30", "P31", "submit"], ["P30", "P32", "continue without"],
+    ["P31", "P32"], ["P32", "P33"], ["P33", "P34", "chat (default)"], ["P33", "P38", "small form"], ["P34", "P35"], ["P35", "P36"],
+    ["P36", "P37"], ["P37", "P34", "next question"], ["P37", "P49", "subject done"], ["P48", "P49"], ["P49", "P50"], ["P38", "P39"],
+    ["P39", "P40"], ["P40", "P41"], ["P41", "P42"], ["P42", "P43"], ["P43", "P44", "candidates"], ["P44", "P45"],
+    ["P45", "P46", "no"], ["P46", "P44", "fix"], ["P45", "P47", "yes"], ["P47", "P48"], ["P50", "P51"], ["P51", "P52"],
+    ["P52", "P53"], ["P52", "P54"], ["P54", "P55"], ["P53", "P56"], ["P55", "P56"], ["P56", "P57"],
+    ["P57", "P58", "VIN photo"], ["P58", "P59"], ["P59", "P60"], ["P60", "P61"], ["P61", "P62"], ["P62", "P63"],
+    ["P63", "P67"], ["P57", "P64", "'10 identical vans'"], ["P64", "P65"], ["P65", "P66"], ["P66", "P67"], ["P57", "P67", "standard"],
+    ["P67", "P68"], ["P68", "P69"], ["P69", "P70"], ["P70", "P71"], ["P71", "P50", "yes: vehicle 2"], ["P71", "P72", "no"],
+    ["P72", "P73"], ["P73", "P74"], ["P74", "P75"], ["P75", "P76"], ["P76", "P77"], ["P77", "P78"],
+    ["P78", "P79"], ["P79", "P80", "changed"], ["P79", "P81", "unchanged"], ["P80", "P81"], ["P81", "P82"], ["P82", "P83"],
+    ["P83", "P84"], ["P84", "P85", "yes"], ["P85", "P86"], ["P84", "P86", "no"], ["P86", "P87"], ["P87", "P88"],
+    ["P88", "P89", "accepted"], ["P88", "P86", "refused: back to form"], ["P89", "P90"], ["P90", "P91"], ["P91", "P92"], ["P92", "P93"],
+    ["P93", "P94", "no"], ["P94", "P93", "after answer"], ["P93", "P95", "yes"], ["P95", "P96"], ["P96", "P97"], ["P97", "P98"],
+    ["P98", "P99"], ["P99", "P100", "", "data"], ["P99", "P101", "quote in INPUT"], ["P99", "P102"], ["P101", "P103"], ["P103", "P104"],
+    ["P102", "P104"], ["P104", "P105", "", "data"], ["P104", "P106"], ["P106", "P107", "coverage question"], ["P107", "P108"], ["P108", "P106", "answer + citation"],
+    ["P106", "P109", "adjust"], ["P109", "P110"], ["P110", "P111"], ["P111", "P112"], ["P112", "P106", "v2 current, v1 past"], ["P106", "P113", "home quote"],
+    ["P113", "P114"], ["P114", "E3"], ["P106", "P115", "select"], ["P115", "P116"], ["P116", "E2"], ["P117", "P118"],
+    ["P117", "P119"], ["P118", "P120"], ["P119", "P120"], ["P120", "P121"], ["P121", "E4"], ["P122", "P124"],
+    ["P124", "P125"], ["P125", "E5", "no hit"], ["P125", "P126", "FLAG"], ["P125", "P127", "STOP"], ["P126", "E5"], ["P127", "P128", "yes"],
+    ["P127", "P132", "no: firm STOP"], ["P128", "P129"], ["P129", "P130", "no"], ["P129", "P131", "yes"], ["P130", "E5"], ["P131", "P132"],
+    ["P123", "P132", "customer request"], ["P132", "P133"], ["P133", "P134"], ["P134", "P135"], ["P135", "P136", "send"], ["P135", "E5", "edit answers"],
+    ["P136", "P137"], ["P137", "P138", "", "data"], ["P137", "E6"], ["P139", "P140"], ["P140", "P141"], ["P141", "P142"],
+    ["P142", "P143"], ["P143", "P144", "save"], ["P143", "P145", "cancel"], ["P144", "E7"], ["P145", "E7"]
+  ]
+} /* </flow-data> */;
+
+(function () {
+  "use strict";
+  const NS = "http://www.w3.org/2000/svg";
+  const COLW = 140, NODEW = 120, NODEH = 58, GW = 23, EVR = 17, PAD_TOP = 30, CHIP_H = 15, PHASE_H = 30, LEFT = 12;
+  const lanes = FLOW.lanes, nodes = FLOW.nodes;
+  const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+  const laneIdx = Object.fromEntries(lanes.map((l, i) => [l.id, i]));
+  const svg = document.getElementById("svg");
+  const ctx = document.createElement("canvas").getContext("2d");
+  function measure(t, px, mono) { ctx.font = (mono ? px + "px ui-monospace, Menlo, monospace" : px + "px system-ui, sans-serif"); return ctx.measureText(t).width; }
+  function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+  function wrap(text, maxW, px, maxLines) {
+    const words = [].concat.apply([], String(text).split(/\s+/).map(w => measure(w, px) > maxW ? w.split(/(?<=_)/) : [w])); const lines = []; let cur = "";
+    for (const w of words) { const t = cur ? cur + " " + w : w; if (measure(t, px) <= maxW || !cur) cur = t; else { lines.push(cur); cur = w; } }
+    if (cur) lines.push(cur);
+    if (lines.length > maxLines) { const keep = lines.slice(0, maxLines); let last = keep[maxLines - 1]; while (measure(last + "…", px) > maxW && last.length) last = last.slice(0, -1); keep[maxLines - 1] = last + "…"; return keep; }
+    return lines;
+  }
+  function chipLabel(s) {
+    const m = s.match(/^a2ui\.([a-z_]+)\(([^)]*)\)\s*→\s*(.+)$/);
+    if (m) { const msgs = m[3].split(/,\s*/); return m[1] + " → " + msgs[0] + (msgs.length > 1 ? " +" + (msgs.length - 1) : ""); }
+    return s;
+  }
+  function chipsOf(n) {
+    if (!["task", "user", "service"].includes(n.type)) return [];
+    const c = n.tools.map(t => ({ kind: "tool", text: t })).concat(n.a2ui.map(a => ({ kind: "a2ui", text: chipLabel(a) })));
+    if (c.length > 4) return c.slice(0, 3).concat([{ kind: "more", text: "+" + (c.length - 3) + " more" }]);
+    return c;
+  }
+  function belowH(n) {
+    if (["start", "end", "intermediate", "gateway"].includes(n.type)) return 6 + wrap(n.name, COLW - 10, 10.5, 3).length * 12;
+    const c = chipsOf(n).length; return c ? 6 + c * CHIP_H : 0;
+  }
+  // lane geometry
+  const laneH = lanes.map(l => { let m = 0; nodes.filter(n => n.lane === l.id).forEach(n => { m = Math.max(m, belowH(n)); }); return PAD_TOP + NODEH + m + 16; });
+  const laneTop = []; { let y = PHASE_H; laneH.forEach((h, i) => { laneTop[i] = y; y += h; }); }
+  const maxCol = Math.max.apply(null, nodes.map(n => n.col));
+  const W = LEFT + (maxCol + 1) * COLW + 20, H = laneTop[lanes.length - 1] + laneH[lanes.length - 1];
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const cx = n => LEFT + n.col * COLW + COLW / 2;
+  const cy = n => laneTop[laneIdx[n.lane]] + PAD_TOP + NODEH / 2;
+  const half = n => n.type === "gateway" ? GW : (["start", "end", "intermediate"].includes(n.type) ? EVR : NODEW / 2);
+  const halfV = n => n.type === "gateway" ? GW : (["start", "end", "intermediate"].includes(n.type) ? EVR : NODEH / 2);
+  // defs
+  const defs = el("defs", {}, svg);
+  [["arr", "var(--edge)"], ["arrd", "var(--edge-data)"], ["arrh", "var(--sel)"]].forEach(([id, c]) => {
+    const m = el("marker", { id, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, defs);
+    el("path", { d: "M0,0 L10,5 L0,10 z", style: "fill:" + c }, m);
+  });
+  // lanes + phases
+  const gl = el("g", {}, svg);
+  lanes.forEach((l, i) => { el("rect", { x: 0, y: laneTop[i], width: W, height: laneH[i], style: "fill:var(" + (i % 2 ? "--lane-b" : "--lane-a") + ")" }, gl); el("line", { x1: 0, x2: W, y1: laneTop[i] + laneH[i], y2: laneTop[i] + laneH[i], style: "stroke:var(--line)" }, gl); });
+  el("rect", { x: 0, y: 0, width: W, height: PHASE_H, style: "fill:var(--phase)" }, gl);
+  FLOW.phases.forEach(p => {
+    const x0 = LEFT + p.from * COLW, x1 = LEFT + (p.to + 1) * COLW;
+    el("line", { x1: x0, x2: x0, y1: 0, y2: H, style: "stroke:var(--line);stroke-dasharray:6 5" }, gl);
+    el("line", { x1: x1, x2: x1, y1: 0, y2: H, style: "stroke:var(--line);stroke-dasharray:6 5" }, gl);
+    const t = el("text", { x: x0 + 10, y: 20, style: "font-size:12px;font-weight:700;fill:var(--phase-fg);letter-spacing:.04em" }, gl); t.textContent = p.label.toUpperCase();
+  });
+  // lane labels (HTML, sticky)
+  const ll = document.getElementById("lanelabels");
+  const ph = document.createElement("div"); ph.className = "ph"; ph.style.height = PHASE_H + "px"; ph.textContent = "Phase"; ll.appendChild(ph);
+  lanes.forEach((l, i) => { const d = document.createElement("div"); d.style.height = laneH[i] + "px"; d.textContent = l.label; ll.appendChild(d); });
+  // edges
+  const ge = el("g", {}, svg), gn = el("g", {}, svg);
+  const occupied = {}; nodes.forEach(n => { occupied[n.lane + ":" + n.col] = true; });
+  function clear(lane, c0, c1) { for (let c = c0; c <= c1; c++) if (occupied[lane + ":" + c]) return false; return true; }
+  const chan = li => laneTop[li] + 9;
+  let loopK = 0;
+  function route(a, b) {
+    const ax = cx(a), ay = cy(a), bx = cx(b), by = cy(b), ai = laneIdx[a.lane], bi = laneIdx[b.lane];
+    const bl = bx - half(b), ar = ax + half(a), xm = LEFT + b.col * COLW + 9, xs = LEFT + (a.col + 1) * COLW - 9;
+    if (b.col > a.col) {
+      if (ai === bi) {
+        if (clear(a.lane, a.col + 1, b.col - 1)) return [[ar, ay], [bl, by]];
+        return [[ar, ay], [xs, ay], [xs, chan(ai)], [xm, chan(ai)], [xm, by], [bl, by]];
+      }
+      if (a.type === "gateway") {
+        const sy = bi < ai ? ay - GW : ay + GW;
+        if (clear(b.lane, a.col, b.col - 1)) return [[ax, sy], [ax, by], [bl, by]];
+        return [[ax, sy], [ax, chan(bi)], [xm, chan(bi)], [xm, by], [bl, by]];
+      }
+      if (clear(a.lane, a.col + 1, b.col - 1)) return [[ar, ay], [xm, ay], [xm, by], [bl, by]];
+      if (clear(b.lane, a.col + 1, b.col - 1)) return [[ar, ay], [xs, ay], [xs, by], [bl, by]];
+      return [[ar, ay], [xs, ay], [xs, chan(bi)], [xm, chan(bi)], [xm, by], [bl, by]];
+    }
+    if (b.col === a.col) { return bi > ai ? [[ax, ay + halfV(a)], [bx, by - halfV(b)]] : [[ax, ay - halfV(a)], [bx, by + halfV(b)]]; }
+    const yc = chan(Math.min(ai, bi)) + (loopK++ % 3) * 5 - 3;
+    return [[ar, ay], [xs, ay], [xs, yc], [xm, yc], [xm, by], [bl, by]];
+  }
+  const edgeEls = [];
+  FLOW.edges.forEach(e => {
+    const a = byId[e[0]], b = byId[e[1]]; if (!a || !b) { console.warn("Bad edge", e); return; }
+    const pts = route(a, b), kind = e[3] || "", loop = b.col < a.col;
+    const g = el("g", { class: "edge" + (kind === "data" ? " data" : "") + (loop ? " loop" : "") }, ge);
+    const p = el("path", { d: "M" + pts.map(q => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" L"), "marker-end": kind === "data" ? "url(#arrd)" : "url(#arr)" }, g);
+    if (e[2]) {
+      let best = 0, bi2 = 0; for (let i = 0; i < pts.length - 1; i++) { const d = Math.abs(pts[i + 1][0] - pts[i][0]) + Math.abs(pts[i + 1][1] - pts[i][1]); if (d > best) { best = d; bi2 = i; } }
+      const p0 = pts[bi2], p1 = pts[bi2 + 1], mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2, horiz = Math.abs(p1[1] - p0[1]) < 1;
+      const tw = measure(e[2], 10) + 8, lx = horiz ? mx - tw / 2 : mx + 4, ly = horiz ? my - 15 : my - 7;
+      el("rect", { x: lx, y: ly, width: tw, height: 14, rx: 3 }, g);
+      const t = el("text", { x: lx + 4, y: ly + 10.5 }, g); t.textContent = e[2];
+    }
+    edgeEls.push({ e, g, p, kind });
+  });
+  // nodes
+  const nodeEls = {};
+  function icon(n, g, x, y) {
+    if (n.icon === "db") { el("ellipse", { cx: x + 6, cy: y + 2, rx: 6, ry: 2.4, style: "fill:none;stroke:var(--db-stroke);stroke-width:1.3" }, g); el("path", { d: `M${x} ${y + 2} v8 a6 2.4 0 0 0 12 0 v-8`, style: "fill:none;stroke:var(--db-stroke);stroke-width:1.3" }, g); return; }
+    if (n.type === "user") { el("circle", { cx: x + 6, cy: y + 3, r: 3, style: "fill:none;stroke:var(--user-stroke);stroke-width:1.4" }, g); el("path", { d: `M${x} ${y + 13} q0 -6 6 -6 q6 0 6 6`, style: "fill:none;stroke:var(--user-stroke);stroke-width:1.4" }, g); return; }
+    if (n.type === "service") { el("circle", { cx: x + 6, cy: y + 6, r: 5, style: "fill:none;stroke:var(--service-stroke);stroke-width:2.6;stroke-dasharray:2.2 1.7" }, g); el("circle", { cx: x + 6, cy: y + 6, r: 1.8, style: "fill:var(--service-stroke)" }, g); return; }
+  }
+  nodes.forEach(n => {
+    const x = cx(n), y = cy(n);
+    const g = el("g", { class: "node", tabindex: "0", role: "button", "aria-label": n.id + " " + n.name, "data-id": n.id }, gn);
+    let below = y;
+    if (["task", "user", "service"].includes(n.type)) {
+      const agentLane = ["main", "memory", "doc"].includes(n.lane);
+      const st = n.icon === "db" ? ["--db", "--db-stroke"] : n.type === "user" ? ["--user", "--user-stroke"] : n.type === "service" ? ["--service", "--service-stroke"] : agentLane ? ["--task", "--task-stroke"] : ["--panel", "--muted"];
+      el("rect", { class: "shape", x: x - NODEW / 2, y: y - NODEH / 2, width: NODEW, height: NODEH, rx: 10, style: `fill:var(${st[0]});stroke:var(${st[1]});stroke-width:1.5` }, g);
+      icon(n, g, x - NODEW / 2 + 6, y - NODEH / 2 + 6);
+      const lines = wrap(n.name, NODEW - 14, 10.5, 3), lh = 12.2, t0 = y - (lines.length - 1) * lh / 2 + 4 + (n.type !== "task" || n.icon ? 3 : 0);
+      lines.forEach((ln, i) => { const t = el("text", { x, y: t0 + i * lh, "text-anchor": "middle", style: "font-size:10.5px" }, g); t.textContent = ln; });
+      const idt = el("text", { x: x + NODEW / 2 - 6, y: y + NODEH / 2 - 5, "text-anchor": "end", style: "font-size:8.5px;fill:var(--muted)" }, g); idt.textContent = n.id;
+      if (n.calls > 0) {
+        const lbl = "LLM×" + n.calls, tw = measure(lbl, 9) + 10;
+        el("rect", { x: x + NODEW / 2 - tw + 4, y: y - NODEH / 2 - 7, width: tw, height: 14, rx: 7, style: "fill:var(--llm)" }, g);
+        const t = el("text", { x: x + NODEW / 2 - tw / 2 + 4, y: y - NODEH / 2 + 3.5, "text-anchor": "middle", style: "font-size:9px;font-weight:700;fill:var(--llm-fg)" }, g); t.textContent = lbl;
+      }
+      below = y + NODEH / 2;
+      chipsOf(n).forEach((c, i) => {
+        const cg = el("g", { class: "chip " + c.kind }, g); const maxW = COLW - 6; let txt = c.text;
+        while (measure(txt, 9.5, true) + 10 > maxW && txt.length > 4) txt = txt.slice(0, -2) + "…";
+        const tw = Math.min(maxW, measure(txt, 9.5, true) + 10), yy = below + 4 + i * CHIP_H;
+        el("rect", { x: x - tw / 2, y: yy, width: tw, height: CHIP_H - 2, rx: 4 }, cg);
+        const t = el("text", { x, y: yy + 9.8, "text-anchor": "middle" }, cg); t.textContent = txt;
+      });
+    } else if (n.type === "gateway") {
+      el("path", { class: "shape", d: `M${x} ${y - GW} L${x + GW} ${y} L${x} ${y + GW} L${x - GW} ${y} Z`, style: "fill:var(--gw);stroke:var(--gw-stroke);stroke-width:1.6" }, g);
+      if (n.variant === "parallel") el("path", { d: `M${x - 9} ${y} H${x + 9} M${x} ${y - 9} V${y + 9}`, style: "stroke:var(--gw-stroke);stroke-width:3" }, g);
+      else el("path", { d: `M${x - 7} ${y - 7} L${x + 7} ${y + 7} M${x + 7} ${y - 7} L${x - 7} ${y + 7}`, style: "stroke:var(--gw-stroke);stroke-width:3" }, g);
+      below = y + GW;
+    } else {
+      const c = n.type === "start" ? "--ev-start" : n.type === "end" ? "--ev-end" : "--ev-mid";
+      el("circle", { class: "shape", cx: x, cy: y, r: EVR, style: `fill:var(--panel);stroke:var(${c});stroke-width:${n.type === "end" ? (n.variant === "none" ? 3 : 4.5) : 1.8}` }, g);
+      if (n.type === "intermediate") { el("circle", { cx: x, cy: y, r: EVR - 4, style: `fill:none;stroke:var(${c});stroke-width:1.4` }, g); el("path", { d: `M${x - 6} ${y - 4} h12 v8 h-12 z M${x - 6} ${y - 4} l6 5 l6 -5`, style: `fill:none;stroke:var(${c});stroke-width:1.2` }, g); }
+      below = y + EVR;
+    }
+    if (!["task", "user", "service"].includes(n.type)) {
+      wrap(n.name, COLW - 10, 10.5, 3).forEach((ln, i) => { const t = el("text", { x, y: below + 14 + i * 12, "text-anchor": "middle", style: "font-size:10.5px" }, g); t.textContent = ln; });
+    }
+    g.addEventListener("click", () => openDetails(n.id));
+    g.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openDetails(n.id); } });
+    nodeEls[n.id] = g;
+  });
+  // stats
+  const toolCalls = nodes.reduce((s, n) => s + n.tools.length, 0), a2uiCalls = nodes.reduce((s, n) => s + n.a2ui.length, 0);
+  document.getElementById("stats").innerHTML = `<span><b>${nodes.length}</b> steps</span><span><b>${lanes.length}</b> lanes</span><span><b>${FLOW.edges.length}</b> flows</span><span><b>${toolCalls}</b> tool calls</span><span><b>${a2uiCalls}</b> A2UI calls/messages</span>`;
+  // legend
+  const legend = document.getElementById("legend");
+  const items = [
+    ["start", "Start event"], ["end", "End event"], ["intermediate", "Intermediate (message) event"], ["gx", "Exclusive gateway"], ["gp", "Parallel gateway"],
+    ["plain", "Task (UI or code)"], ["task", "Agent task (model)"], ["user", "User task"], ["service", "Service task (code)"], ["db", "Data store write/read"],
+    ["llm", "Model completions in the turn"], ["tool", "Tool call"], ["a2ui", "A2UI call → messages"], ["flow", "Sequence flow"], ["loop", "Loop back"], ["data", "Data association"]
+  ];
+  items.forEach(([k, label]) => {
+    const s = document.createElement("span"); const sv = document.createElementNS(NS, "svg"); sv.setAttribute("width", "30"); sv.setAttribute("height", "18"); sv.setAttribute("aria-hidden", "true");
+    const c = (tag, a) => el(tag, a, sv);
+    if (k === "start") c("circle", { cx: 15, cy: 9, r: 7, style: "fill:var(--panel);stroke:var(--ev-start);stroke-width:1.6" });
+    if (k === "end") c("circle", { cx: 15, cy: 9, r: 7, style: "fill:var(--panel);stroke:var(--ev-end);stroke-width:3.5" });
+    if (k === "intermediate") { c("circle", { cx: 15, cy: 9, r: 7.5, style: "fill:var(--panel);stroke:var(--ev-mid);stroke-width:1.4" }); c("circle", { cx: 15, cy: 9, r: 5, style: "fill:none;stroke:var(--ev-mid);stroke-width:1.2" }); }
+    if (k === "gx" || k === "gp") { c("path", { d: "M15 1 L23 9 L15 17 L7 9 Z", style: "fill:var(--gw);stroke:var(--gw-stroke);stroke-width:1.3" }); c("path", { d: k === "gp" ? "M11 9 H19 M15 5 V13" : "M12 6 L18 12 M18 6 L12 12", style: "stroke:var(--gw-stroke);stroke-width:2" }); }
+    if (k === "plain" || k === "task" || k === "user" || k === "service" || k === "db") { const st = { plain: ["--panel", "--muted"], task: ["--task", "--task-stroke"], user: ["--user", "--user-stroke"], service: ["--service", "--service-stroke"], db: ["--db", "--db-stroke"] }[k]; c("rect", { x: 3, y: 2, width: 24, height: 14, rx: 4, style: `fill:var(${st[0]});stroke:var(${st[1]});stroke-width:1.3` }); }
+    if (k === "llm") { c("rect", { x: 1, y: 3, width: 28, height: 12, rx: 6, style: "fill:var(--llm)" }); const t = c("text", { x: 15, y: 12, "text-anchor": "middle", style: "font-size:8px;font-weight:700;fill:var(--llm-fg)" }); t.textContent = "LLM×2"; }
+    if (k === "tool") c("rect", { x: 2, y: 4, width: 26, height: 10, rx: 3, style: "fill:var(--chip-tool)" });
+    if (k === "a2ui") c("rect", { x: 2, y: 4, width: 26, height: 10, rx: 3, style: "fill:var(--chip-a2ui)" });
+    if (k === "flow") c("path", { d: "M2 9 H26", style: "stroke:var(--edge);stroke-width:1.4", "marker-end": "url(#arr)" });
+    if (k === "loop") c("path", { d: "M2 9 H26", style: "stroke:var(--edge);stroke-width:1.4;stroke-dasharray:2 3" });
+    if (k === "data") c("path", { d: "M2 9 H26", style: "stroke:var(--edge-data);stroke-width:1.4;stroke-dasharray:5 4" });
+    s.appendChild(sv); s.appendChild(document.createTextNode(label)); legend.appendChild(s);
+  });
+  // details
+  const panel = document.getElementById("details");
+  const laneLabel = id => lanes[laneIdx[id]].label;
+  const typeLabel = n => n.type === "gateway" ? (n.variant === "parallel" ? "Parallel gateway" : "Exclusive gateway") : n.type === "start" ? "Start event" : n.type === "end" ? "End event" : n.type === "intermediate" ? "Intermediate message event" : n.icon === "db" ? "Service task (data store)" : n.type === "user" ? "User task" : n.type === "service" ? "Service task" : ["main", "memory", "doc"].includes(n.lane) ? "Task (agent, model call)" : "Task";
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const list = a => a.length ? a.map(x => "<code>" + esc(x) + "</code>").join(" ") : '<span class="none">none</span>';
+  const order = nodes.map(n => n.id);
+  let selected = null;
+  function openDetails(id) {
+    const n = byId[id]; selected = id;
+    Object.values(nodeEls).forEach(g => g.classList.remove("sel")); nodeEls[id].classList.add("sel");
+    edgeEls.forEach(o => { const hit = o.e[0] === id || o.e[1] === id; o.g.classList.toggle("hl", hit); o.p.setAttribute("marker-end", hit ? "url(#arrh)" : (o.kind === "data" ? "url(#arrd)" : "url(#arr)")); });
+    const into = FLOW.edges.filter(e => e[1] === id).map(e => e[0] + (e[2] ? " (" + e[2] + ")" : "")), out = FLOW.edges.filter(e => e[0] === id).map(e => e[1] + (e[2] ? " (" + e[2] + ")" : ""));
+    const i = order.indexOf(id);
+    panel.innerHTML = `<button class="close" aria-label="Close details">Close</button>
+      <div class="meta">${esc(n.id)} · ${esc(laneLabel(n.lane))}</div><h2>${esc(n.name)}</h2><div class="meta">${esc(typeLabel(n))}</div>
+      <dl><dt>What happens</dt><dd>${esc(n.what)}</dd>
+      <dt>Tool calls</dt><dd>${list(n.tools)}</dd>
+      <dt>A2UI calls and messages</dt><dd>${list(n.a2ui)}</dd>
+      <dt>State paths written</dt><dd>${list(n.state)}</dd>
+      <dt>Events</dt><dd>${list(n.events)}</dd>
+      <dt>Model calls</dt><dd>${n.calls}${n.calls_note ? " (" + esc(n.calls_note) + ")" : ""}</dd>
+      <dt>Comes from</dt><dd>${list(into)}</dd><dt>Goes to</dt><dd>${list(out)}</dd></dl>
+      <div class="nav"><button data-go="${i > 0 ? order[i - 1] : ""}" ${i > 0 ? "" : "disabled"}>← Previous</button><button data-go="${i < order.length - 1 ? order[i + 1] : ""}" ${i < order.length - 1 ? "" : "disabled"}>Next →</button></div>`;
+    panel.classList.add("open");
+    panel.querySelector(".close").onclick = closeDetails;
+    panel.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { if (b.dataset.go) { openDetails(b.dataset.go); scrollToNode(b.dataset.go); } });
+  }
+  function closeDetails() { panel.classList.remove("open"); Object.values(nodeEls).forEach(g => g.classList.remove("sel")); edgeEls.forEach(o => { o.g.classList.remove("hl"); o.p.setAttribute("marker-end", o.kind === "data" ? "url(#arrd)" : "url(#arr)"); }); if (selected && nodeEls[selected]) nodeEls[selected].focus(); selected = null; }
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && panel.classList.contains("open")) closeDetails(); });
+  const scroller = document.getElementById("scroller"), canvas = document.getElementById("canvas");
+  let zoom = 1;
+  function scrollToNode(id) { const n = byId[id]; scroller.scrollTo({ left: Math.max(0, (cx(n) - 300) * zoom), top: Math.max(0, (cy(n) - 160) * zoom), behavior: "smooth" }); }
+  // zoom
+  function setZoom(z) { zoom = Math.max(0.3, Math.min(1.6, z)); canvas.style.zoom = zoom; document.getElementById("zval").textContent = Math.round(zoom * 100) + "%"; }
+  document.getElementById("zin").onclick = () => setZoom(zoom + 0.1);
+  document.getElementById("zout").onclick = () => setZoom(zoom - 0.1);
+  document.getElementById("z100").onclick = () => setZoom(1);
+  document.getElementById("zfit").onclick = () => setZoom((scroller.clientHeight - 4) / H);
+  // filter
+  document.getElementById("q").addEventListener("input", e => {
+    const q = e.target.value.trim().toLowerCase();
+    nodes.forEach(n => { const hay = [n.id, n.name, n.what].concat(n.tools, n.a2ui, n.state, n.events).join(" ").toLowerCase(); nodeEls[n.id].classList.toggle("dim", !!q && !hay.includes(q)); });
+    edgeEls.forEach(o => o.g.classList.toggle("dim", !!q));
+  });
+  // table
+  const tbl = document.getElementById("table");
+  tbl.innerHTML = "<thead><tr><th>Step</th><th>Lane</th><th>BPMN element</th><th>What happens</th><th>Tool calls</th><th>A2UI calls → messages</th><th>State paths written</th><th>Events</th><th>Model calls</th></tr></thead><tbody>" +
+    nodes.map(n => `<tr data-id="${n.id}"><td class="id">${n.id}</td><td>${esc(laneLabel(n.lane))}</td><td>${esc(typeLabel(n))}</td><td><b>${esc(n.name)}.</b> ${esc(n.what)}</td><td>${list(n.tools)}</td><td>${list(n.a2ui)}</td><td>${list(n.state)}</td><td>${list(n.events)}</td><td>${n.calls}${n.calls_note ? "<br><span class='none'>" + esc(n.calls_note) + "</span>" : ""}</td></tr>`).join("") + "</tbody>";
+  tbl.querySelectorAll("tr[data-id]").forEach(tr => tr.addEventListener("click", () => { openDetails(tr.dataset.id); scrollToNode(tr.dataset.id); scroller.scrollIntoView({ behavior: "smooth", block: "start" }); }));
+})();
+</script>
+</body>
+</html>

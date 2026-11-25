@@ -1,0 +1,133 @@
+[
+  {
+    "id": "extra-text-widgets",
+    "spec": {
+      "form_id": "extra_text", "title": "Text widgets", "entity": {"type": "driver", "index": 1}, "intro": "Intro", "intro_tone": "ok",
+      "fields": [
+        {"key": "phone_number", "widget": "phone", "hint": "Hint"},
+        {"key": "postal_code"},
+        {"key": "weeks_outside_quebec", "widget": "number", "field_actions": [{"id": "lookup", "label": "Look up", "kind": "lookup"}]},
+        {"key": "vehicle_value", "widget": "currency", "required": true},
+        {"key": "effective_date", "label": "Start"},
+        {"key": "driver_license_number", "widget": "text", "placeholder": "T6512-140386-08", "computed": "x = y"},
+        {"key": "occupation_label", "readonly": true, "help": "Own help", "hint": "Own hint"},
+        {"key": "first_name", "required": false},
+        {"key": "date_of_birth", "widget": "date"},
+        {"key": "/quote/review_confirmed", "widget": "checkbox", "label": "I confirm", "required": true},
+        {"key": "age_obtained_license", "widget": "slider", "max": 0, "unit": "ans"},
+        {"key": "annual_kilometers", "widget": "slider"},
+        {"key": "vehicle_make", "widget": "slider"}
+      ]
+    }
+  },
+  {
+    "id": "extra-choice-widgets",
+    "spec": {
+      "form_id": "extra_choice", "title": "Choice widgets", "layout": "two_column",
+      "fields": [
+        {"key": "usage_type", "widget": "radio"},
+        {"key": "gender", "widget": "select"},
+        {"key": "province_code"},
+        {"key": "quote_goal"},
+        {"key": "add_ons"},
+        {"key": "add_ons", "widget": "select"},
+        {"key": "has_claims", "widget": "toggle"},
+        {"key": "phone_type", "widget": "radio"},
+        {"key": "deductible", "options": [["500", "500 $"], ["1000", "1 000 $"]]},
+        {"key": "marital_status_code", "widget": "chips"},
+        {"key": "callback_slot", "widget": "time_slots", "options": [["a", "Lundi"]]},
+        {"key": "callback_slot", "widget": "chips", "options": []},
+        {"key": "has_convictions_in_past_three_years"},
+        {"key": "contact_consent"},
+        {"key": "vin", "widget": "text"}
+      ]
+    }
+  },
+  {
+    "id": "extra-no-key-widgets",
+    "spec": {
+      "form_id": "extra_nokey", "title": "Widgets without a key", "entity": {"type": "vehicle", "index": 2}, "layout": "cards",
+      "fields": [
+        {"widget": "ymm", "required": false, "label": "Véhicule"},
+        {"widget": "address_lookup", "label": "Adresse"},
+        {"widget": "assignment_board"},
+        {"widget": "offer_cards"},
+        {"widget": "repeater"},
+        {"widget": "repeater", "repeat": {"fields": [{"key": "vin"}, {"key": "vehicle_value", "widget": "currency"}]}},
+        {"widget": "summary"},
+        {"widget": "file"},
+        {"widget": "document_drop"},
+        {"widget": "info", "hint": "Only a hint"},
+        {"widget": "info", "label": "Only a label", "tone": "ok"},
+        {"widget": "section", "label": "Section"},
+        {"widget": "matrix", "data": {"rows": [{"index": 0}], "cols": [{"index": 0}], "choices": [{"value": "x", "label": "X"}]}},
+        {"widget": "matrix"},
+        {"widget": "rating", "key": "/underwriting/rating"},
+        {"widget": "textarea", "key": "/quote/handoff_summary"},
+        {"widget": "textarea"}
+      ]
+    }
+  },
+  {
+    "id": "extra-visible-if-and-actions",
+    "spec": {
+      "form_id": "extra_visible", "title": "Conditions", "layout": "single",
+      "fields": [
+        {"key": "outside_quebec"},
+        {"key": "weeks_outside_quebec", "visible_if": "outside_quebec == true"},
+        {"key": "outside_quebec_more_than_25_weeks", "visible_if": " outside_quebec == false "},
+        {"key": "age_obtained_license", "visible_if": "age_obtained_license == 17"},
+        {"key": "occupation_label", "visible_if": "employment_status_code == 'employed'"},
+        {"key": "night_parking_label", "visible_if": "parking_place_type_code == \"street\""},
+        {"key": "city", "visible_if": "/quote/province_code == 'QC'"}
+      ],
+      "actions": [
+        {"id": "back", "label": "Back", "style": "secondary"},
+        {"id": "skip", "label": "Skip", "style": "link"},
+        {"id": "go", "label": "Go"}
+      ]
+    }
+  },
+  {
+    "id": "extra-no-actions",
+    "spec": {"form_id": "extra_none", "title": "No actions", "fields": [{"key": "first_name"}], "actions": []}
+  },
+  {
+    "id": "extra-prefill",
+    "spec": {
+      "form_id": "extra_prefill", "title": "Prefill", "layout": "single",
+      "fields": [
+        {"widget": "ymm", "key": "vehicle_year", "prefill": {"value": {"vehicle_year": 2019, "vehicle_type": "car"}, "note": "Note only"}},
+        {"widget": "address_lookup", "prefill": {"value": {"address_line1": "1 Rue A", "city": "Laval", "province_code": "QC", "postal_code": "H7N 1A1"}, "source": "lookup"}},
+        {"widget": "assignment_board", "prefill": {"value": [{"driver_index": 0, "vehicle_index": 0, "role": "principal"}], "source": "chat", "note": "N"}},
+        {"widget": "matrix", "key": "driver_vehicle_assignments", "prefill": {"value": []}},
+        {"widget": "offer_cards", "prefill": {"value": "premium"}},
+        {"widget": "document_drop", "data": {"documents": [{"purpose": "licence", "fills": {"first_name": "/quote/first_name"}}], "read": ["licence"], "values": {"/quote/first_name": "Marie", "/drivers/0/driver_license_number": null}}},
+        {"widget": "repeater", "key": "/vehicles", "repeat": {"start": 2, "count": 2, "min": 1, "max": 3, "fields": [{"key": "vin", "widget": "vin"}], "prefill": [{"vin": "2T3W1RFV0LW000001"}]}},
+        {"key": "has_claims", "prefill": {"value": null, "source": "document"}},
+        {"key": "contact_consent", "prefill": {"value": false}},
+        {"key": "first_name", "prefill": {"source": "lookup"}},
+        {"key": "last_name", "prefill": {"note": "« Tremblay »"}},
+        {"key": "/quote/review_confirmed", "widget": "checkbox", "prefill": {"value": true, "source": "chat", "note": "Oui"}},
+        {"key": "add_ons", "prefill": {"value": ["roadside"], "source": "previous_quote"}},
+        {"key": "/vehicles/1/annual_kilometers", "widget": "slider", "max": 60000, "prefill": {"value": 18000}}
+      ]
+    }
+  },
+  {
+    "id": "extra-entities",
+    "spec": {
+      "form_id": "extra_entities", "title": "Entities", "entity": {"type": "driver", "index": 3},
+      "fields": [
+        {"key": "first_name"},
+        {"key": "driver_name"},
+        {"key": "vehicle_year"},
+        {"key": "has_claims"},
+        {"key": "/drivers/0/driver_name"},
+        {"key": "/underwriting/callback_slot", "widget": "time_slots", "options": [["a", "A"]]},
+        {"key": "/household/driver_vehicle_assignments", "widget": "assignment_board"},
+        {"widget": "ymm", "key": "/vehicles/4/vehicle_year"}
+      ]
+    }
+  }
+]

@@ -1,0 +1,49 @@
+# main -> dev -> prod. CI runs first. Each environment is the same reusable workflow (deploy-env.yml); the `prod` GitHub environment
+# has required reviewers, so prod waits for an approval. Run it by hand with plan-only to see a Terraform plan without applying.
+#
+# Rollback (details in infra/README.md): a failed canary rolls back by itself. After a finished release, either re-run this workflow on
+# the previous commit (images are tagged by commit and stay in the registry), or point traffic back by hand:
+#   deploy/aca_rollout.sh rollback -g <resource-group> <app> <new-revision> <previous-revision>
+# Agent versions: create_toolbox.py --pin <n> for the toolbox, and re-deploy the previous commit for the agents.
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      plan-only:
+        description: Plan only, apply nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  dev:
+    needs: ci
+    uses: ./.github/workflows/deploy-env.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: dev
+      plan-only: ${{ inputs.plan-only == true }}
+
+  prod:
+    needs: dev
+    uses: ./.github/workflows/deploy-env.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: prod
+      plan-only: ${{ inputs.plan-only == true }}

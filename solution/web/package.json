@@ -1,0 +1,45 @@
+{
+  "name": "quote-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Customer web frontend for the auto quote chat (Desjardins Assurances demo, Variation C): A2UI 1.0 renderer with the insurance catalog.",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview --port 5173 --strictPort",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "fixtures": "node fixtures/gen.mjs",
+    "test": "vitest run",
+    "test:visual": "playwright test -c playwright.visual.config.ts",
+    "test:visual:update": "playwright test -c playwright.visual.config.ts --update-snapshots",
+    "test:e2e": "playwright test -c playwright.config.ts",
+    "test:all": "npm run typecheck && npm run lint && npm run test && npm run test:visual && npm run test:e2e",
+    "test:stack": "playwright test -c playwright.stack.config.ts"
+  },
+  "dependencies": {
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.15",
+    "@playwright/test": "1.64.1",
+    "@testing-library/dom": "10.4.0",
+    "@testing-library/jest-dom": "6.10.0",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "22.20.7",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "5.2.0",
+    "jsdom": "26.1.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.8",
+    "vitest": "3.2.7"
+  }
+}

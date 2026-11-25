@@ -1,0 +1,9 @@
+# Used by BuildKit for web/Dockerfile (context: the solution folder). Only the contracts and the web app go in.
+*
+!contracts/
+!web/
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+web/tests/visual/__screenshots__

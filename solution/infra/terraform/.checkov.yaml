@@ -1,0 +1,24 @@
+framework:
+  - terraform
+directory:
+  - .
+quiet: true
+compact: true
+download-external-modules: false
+# Every skip below is a false positive on azurerm 5 or a documented decision (infra/README.md "Accepted findings").
+skip-check:
+  - CKV_AZURE_59   # azurerm 5 uses public_network_access = "Disabled"; the check only reads the deprecated boolean
+  - CKV_AZURE_140  # azurerm 5 uses local_authentication_enabled = false
+  - CKV2_AZURE_33  # private endpoints are created for every account by the for_each in private_endpoints.tf
+  - CKV_AZURE_233  # ACR zone redundancy is set from the environment (prod only); not evaluable statically
+  - CKV_AZURE_33   # the queue service is not used
+  - CKV2_AZURE_21  # blob logs go to Log Analytics through diagnostics.tf; the check reads the legacy block
+  - CKV_AZURE_206  # ZRS by design; disaster recovery rebuilds the stack in Canada East
+  - CKV_AZURE_165  # same: no registry geo-replication
+  - CKV_AZURE_164  # images are pinned by git sha; content trust is not used
+  - CKV_AZURE_166  # no quarantine: scanning is a registry-side decision not taken yet
+  - CKV_AZURE_100  # customer-managed keys: Microsoft-managed keys until the Law 25 assessment says otherwise
+  - CKV2_AZURE_1   # same
+  - CKV2_AZURE_22  # same
+  - CKV_AZURE_208  # Search SLA needs 3 replicas for writes (design: 2 replicas, read SLA)
+  - CKV_AZURE_209  # dev runs one replica

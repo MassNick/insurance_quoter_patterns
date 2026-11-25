@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memory-output.schema.json",
+  "title": "MemoryAgentOutput",
+  "description": "Structured output of the memory agent for one user turn. The memory agent receives the user message, the last assistant message and the current state, and returns only what changed, plus signals and any answer-mode preference the customer stated. Passed as response_format (strict JSON schema) so the model cannot return free text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state_changes",
+    "signals",
+    "conflicts",
+    "intent",
+    "session_preferences"
+  ],
+  "properties": {
+    "state_changes": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "op",
+          "value",
+          "confidence",
+          "evidence"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "JSON Pointer into the session state, for example /vehicles/0/vehicle_year or /quote/first_name. Must resolve to a key in state-catalog.json, except add_entity, which may name the new entity itself (/vehicles/1).",
+            "pattern": "^/((quote|underwriting|household)/[a-z0-9_]+|(vehicles|drivers)/\\d+(/[a-z0-9_]+)?)$"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "set",
+              "clear",
+              "add_entity"
+            ]
+          },
+          "value": {
+            "description": "New value, typed per the catalog. null when op is clear.",
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null",
+              "array",
+              "object"
+            ]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "evidence": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "Short quote of the user's words that justifies the change."
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Conclusions drawn from what the user said that are not direct field values. The main agent uses them on the next turn to ask better questions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "confidence",
+          "related_paths",
+          "suggested_follow_up"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "multi_vehicle_likely",
+              "additional_driver_likely",
+              "young_driver_present",
+              "student_away",
+              "fleet_detected",
+              "possible_coverage_lapse",
+              "commercial_use_suspected",
+              "high_value_vehicle",
+              "vehicle_modified",
+              "out_of_province_use",
+              "bundle_opportunity",
+              "discount_eligible",
+              "document_mismatch",
+              "life_event",
+              "price_sensitive",
+              "other"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "related_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 6
+          },
+          "suggested_follow_up": {
+            "type": "string",
+            "maxLength": 160
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "maxItems": 6,
+      "description": "Statements that contradict a value already confirmed by a form, document or lookup. The memory agent never overwrites a confirmed value; it reports a conflict instead.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "current_value",
+          "stated_value",
+          "evidence"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "current_value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "stated_value": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "maxLength": 160
+          }
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase_hint",
+        "off_topic"
+      ],
+      "properties": {
+        "phase_hint": {
+          "type": "string",
+          "enum": [
+            "intent",
+            "gather",
+            "advise"
+          ]
+        },
+        "off_topic": {
+          "type": "boolean",
+          "description": "True when the message is outside auto-insurance quoting. The BFF logs it; the main agent applies the guardrail reply."
+        }
+      }
+    },
+    "session_preferences": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "answer_mode"
+      ],
+      "description": "Optional: null unless the customer said in THIS message how they want to answer (D14). Listed in required only because strict structured outputs need every property. The BFF stores a non-null answer_mode in the session document.",
+      "properties": {
+        "answer_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "text",
+            "forms",
+            null
+          ],
+          "description": "text: chat, no forms except the assignment board. forms: small subject forms."
+        }
+      }
+    }
+  }
+}

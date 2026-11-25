@@ -1,0 +1,21 @@
+# Local and generated files (solution/, web/ and infra/terraform/ have their own ignore files too).
+.DS_Store
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+test-results/
+playwright-report/
+.logs/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+*_override.tf
+override.tf
+.env
+.env.*

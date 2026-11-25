@@ -1,0 +1,121 @@
+# Advisory visual review of pull requests that touch web/. It never blocks a merge: the review job may fail or be skipped and the
+# check still passes. Screenshots come from the Playwright visual suite; an AI agent compares them with docs/style-guide.md
+# (brand tokens, grid alignment, French copy, accessibility contrast, phone layout) and comments on the pull request.
+#
+# Two interchangeable reviewers, chosen by the repository variable VISUAL_REVIEW_AGENT:
+#   azure-openai (default)  deploy/visual_review.py on an Azure OpenAI / Foundry vision deployment, Entra auth through OIDC.
+#                           Variables: VISUAL_REVIEW_ENDPOINT, VISUAL_REVIEW_MODEL, VISUAL_REVIEW_CLIENT_ID (federated credential
+#                           for pull requests), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID. Use a resource GitHub runners can reach.
+#   claude                  the Claude Code GitHub Action. Secret: ANTHROPIC_API_KEY.
+# Pull requests from forks get neither OIDC nor secrets: the review is skipped for them.
+name: Visual review
+
+on:
+  pull_request:
+    paths:
+      - "solution/web/**"
+      - "solution/docs/style-guide.md"
+      - "solution/deploy/visual_review.py"
+      - ".github/workflows/visual-review.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: visual-review-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: solution # the repository root holds the design; the code is in solution/
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-24.04
+    continue-on-error: true # advisory, like the review
+    defaults:
+      run:
+        working-directory: solution/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: solution/web/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # A moved baseline is what the review looks at, not a failure of this workflow (ci.yml fails it).
+      - run: npm run test:visual
+        continue-on-error: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-screenshots
+          path: |
+            solution/web/test-results/
+            solution/web/tests/visual/__screenshots__/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  review:
+    needs: screenshots
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: visual-screenshots
+          path: solution/shots
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+
+      # Option B (default): Azure OpenAI vision deployment.
+      - if: vars.VISUAL_REVIEW_AGENT != 'claude'
+        uses: ./.github/actions/azure-env
+        with:
+          client-id: ${{ vars.VISUAL_REVIEW_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - if: vars.VISUAL_REVIEW_AGENT != 'claude'
+        run: uv run --project deploy --extra azure python deploy/visual_review.py --images shots --style-guide docs/style-guide.md --out visual-review.md
+        env:
+          VISUAL_REVIEW_ENDPOINT: ${{ vars.VISUAL_REVIEW_ENDPOINT }}
+          VISUAL_REVIEW_MODEL: ${{ vars.VISUAL_REVIEW_MODEL }}
+      - if: vars.VISUAL_REVIEW_AGENT != 'claude'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('solution/visual-review.md', 'utf8');
+            await core.summary.addRaw(body).write();
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number });
+            const mine = comments.find((c) => c.body.startsWith('<!-- visual-review -->'));
+            if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number, body });
+
+      # Option A: the Claude Code GitHub Action, with the same prompt as the script (one source: deploy/visual_review.py).
+      - id: prompt
+        if: vars.VISUAL_REVIEW_AGENT == 'claude'
+        run: |
+          uv run --project deploy --extra azure python deploy/visual_review.py --print-prompt > prompt.txt
+          { echo "text<<PROMPT_EOF"; cat prompt.txt; echo "PROMPT_EOF"; } >> "$GITHUB_OUTPUT"
+      - if: vars.VISUAL_REVIEW_AGENT == 'claude'
+        uses: anthropics/claude-code-action@4411a9e9b0283becf4b924f7bce360fd7756c78c # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: --max-turns 15 --allowedTools "Read,Write,Bash(gh pr comment:*)"
+          prompt: |
+            ${{ steps.prompt.outputs.text }}
+
+            The screenshots are PNG files under ./solution/shots (read them with the Read tool). The style guide is solution/docs/style-guide.md.
+            Write the review to review.md as markdown: a first line `<!-- visual-review -->`, a one-paragraph summary, then a table
+            with the columns severity, area, screenshot, finding, suggestion. Then post it as the single comment of this pull request:
+            gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body-file review.md
+            This review is advisory.

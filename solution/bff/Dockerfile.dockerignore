@@ -1,0 +1,10 @@
+# BuildKit reads this file for bff/Dockerfile (the build context is the solution folder).
+*
+!packages/quote_common/pyproject.toml
+!packages/quote_common/src
+!contracts
+!bff/pyproject.toml
+!bff/README.md
+!bff/src
+**/__pycache__
+**/.pytest_cache

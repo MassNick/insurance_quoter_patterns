@@ -1,0 +1,23 @@
+# Copy to prod.tfvars (git-ignored) and fill in. Never commit real ids or secrets here.
+subscription_id = "00000000-0000-0000-0000-000000000000"
+environment     = "prod"
+location        = "canadacentral"
+
+# --- Models: settings.yaml at the solution root. Uncomment to override it for this environment only. ---
+# model_deployments = { main = { model_name = "gpt-5.6-terra", model_version = "2026-07-09", sku_name = "GlobalStandard", capacity = 50 }, ... }
+# model_roles       = { main = "main", memory = "memory", document = "document", embedding = "embedding" }
+# cosmos_location   = "canadaeast" # only if the subscription cannot create Cosmos accounts in `location`
+
+# --- Resilience and sizing (architecture 2, 16, 17) ---
+cosmos_failover_location = "canadaeast" # Canada Central write, Canada East read, service-managed failover
+search_sku               = "standard2"
+search_replicas          = 2 # read SLA
+enable_nat_gateway       = true
+agent_egress_mode        = "Enforced" # after a clean Audit period
+
+deploy_apps = false # set true with app_images once the images are pushed
+deploy_web  = false
+
+# cicd_principal_id        = "<github-oidc-service-principal-object-id>"
+# operators_group_id       = "<entra-group-object-id>"
+# quote_agent_principal_id = "<instance_identity.principal_id of quote-agent>"

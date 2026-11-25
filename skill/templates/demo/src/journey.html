@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soumission auto</title>
+<meta name="description" content="Desjardins Assurances demo (Variation C): chat-first auto quote with small A2UI forms, document reading, drag-to-assign drivers, end-of-form rules and a developer trace. Simulated agents, no network calls.">
+<!--
+  LOCAL DEMO FOR A CLIENT. Simulated agents, no network calls.
+  The brand mark is a hand-drawn approximation of the Desjardins logo used as a placeholder.
+  Replace ICON.brand in a2ui.js with the official asset from the Desjardins brand team before showing it externally.
+-->
+<style>
+/* @inline styles.css */
+
+/* ---------- demo bar (not part of the product) ---------- */
+.demo-bar { height: 44px; background: #1F1F1F; color: #EEE; display: flex; align-items: center; gap: 10px; padding: 0 14px; font-size: 13px; position: relative; z-index: 90; }
+.demo-bar b { font-weight: 600; color: #fff; }
+.demo-bar .seg2 { display: flex; background: #333; border-radius: 8px; padding: 3px; gap: 2px; }
+.demo-bar .seg2 button { border: 0; background: none; color: #CCC; padding: 5px 12px; border-radius: 6px; font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+.demo-bar .seg2 button[aria-pressed="true"] { background: #fff; color: #111; }
+.demo-bar .sp { flex: 1; }
+.demo-bar .dnote { color: #AAA; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.demo-bar .pbtn { border: 1px solid #555; background: none; color: #EEE; padding: 5px 10px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; }
+.demo-bar .pbtn[aria-pressed="true"] { background: #fff; color: #111; border-color: #fff; }
+.demo-bar .pbtn .n { opacity: .7; margin-left: 4px; }
+@media (max-width: 1100px) { .demo-bar .dnote { display: none; } }
+
+/* ---------- app shell (Variation C) ---------- */
+.app { height: calc(100vh - 44px); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.hdr { height: 64px; background: var(--g3); color: #fff; display: flex; align-items: center; gap: 18px; padding: 0 24px; position: relative; z-index: 20; flex: none; }
+.logo { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; }
+.logo svg { width: 30px; height: 33px; flex: none; }
+.logo .wm { display: flex; flex-direction: column; line-height: 1; }
+.logo .wm b { font-size: 21px; letter-spacing: -.02em; font-weight: 700; }
+.logo .wm small { font-size: 11.5px; font-weight: 600; margin-top: 3px; }
+.hdr .sp { flex: 1; }
+.qnum { font-size: 13px; color: #CFE6DA; white-space: nowrap; }
+.qnum b { font-family: var(--mono); color: #fff; }
+.mode { display: inline-flex; border: 1px solid #fff; border-radius: 999px; overflow: hidden; flex: none; }
+.mode button { border: 0; background: transparent; color: #fff; padding: 7px 14px; font-weight: 600; font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+.mode button[aria-pressed="true"] { background: #fff; color: var(--g3); }
+.agent-btn { border: 0; background: none; color: #fff; font-weight: 600; font-size: 13.5px; display: inline-flex; gap: 6px; align-items: center; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.steps { display: flex; gap: 6px; padding: 12px 24px 0 96px; flex: none; overflow-x: auto; scrollbar-width: none; }
+.steps::-webkit-scrollbar { display: none; }
+.steps span { font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: #fff; color: var(--ink-3); border: 1px solid var(--line-3); white-space: nowrap; transition: all .3s; }
+.steps span.on { background: var(--g); color: #fff; border-color: var(--g); }
+.steps span.done { color: var(--g); border-color: var(--m1); background: var(--m2); }
+.ws { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+#chat { position: absolute; top: 20px; bottom: 20px; transition: left .5s cubic-bezier(.2,.8,.2,1), width .5s cubic-bezier(.2,.8,.2,1); z-index: 2; }
+.welcome { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 18px 0 6px; }
+.welcome .avatar { width: 84px; height: 92px; }
+.welcome h2 { margin: 10px 0 2px; font-weight: 300; color: var(--g); font-size: 30px; }
+.welcome p { margin: 0; color: var(--ink-2); }
+.form-stage { position: absolute; top: 20px; bottom: 20px; display: flex; justify-content: center; align-items: flex-start; z-index: 3; }
+.form-stage > .form-card { height: auto; }
+.offers-inline .o { border: 1px solid var(--line-2); background: #fff; padding: 10px; border-radius: 12px; }
+.offers-inline .o.rec { border: 2px solid var(--g); }
+.offers-inline .o b { display: block; font-size: 13px; }
+.offers-inline .o .p { font-size: 20px; font-weight: 700; color: var(--g); }
+.offers-inline .o small { color: var(--ink-3); }
+
+/* left rail opens the dossier */
+.rail { position: absolute; z-index: 30; left: 0; top: 0; bottom: 0; width: 72px; border: 0; background: #fff; color: var(--g); box-shadow: 1px 0 0 var(--line-3); display: flex; flex-direction: column; align-items: center; padding: 18px 0; gap: 18px; font-size: 10.5px; font-weight: 600; }
+.rail .rail-i { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--ink-3); }
+.rail .rail-i svg { width: 22px; height: 22px; color: var(--g); }
+.rail .cnt { background: var(--g); color: #fff; border-radius: 999px; font-size: 11px; padding: 0 7px; font-weight: 700; }
+.rail[aria-expanded="true"] .rail-i:first-child { color: var(--g); }
+.dossier { position: absolute; z-index: 40; left: 72px; top: 0; bottom: 0; width: min(390px, 85vw); background: #fff; display: flex; flex-direction: column; box-shadow: 10px 0 40px rgba(0,0,0,.15); visibility: hidden; }
+.dossier.open { visibility: visible; }
+.dhead { padding: 18px 20px 0; display: flex; align-items: center; gap: 10px; position: relative; }
+.dhead h3 { margin: 0; font-size: 21px; font-weight: 300; color: var(--g); }
+.dhead .x { margin-left: auto; border: 0; background: none; color: var(--ink-3); font-size: 24px; line-height: 1; }
+.dtabs { display: flex; gap: 4px; padding: 10px 20px 0; border-bottom: 1px solid var(--line-3); }
+.dtabs button { border: 0; background: none; padding: 8px 4px 10px; margin-right: 14px; font-weight: 600; color: var(--ink-3); border-bottom: 3px solid transparent; margin-bottom: -1px; display: inline-flex; gap: 6px; align-items: center; }
+.dtabs button[aria-selected="true"] { color: var(--g); border-bottom-color: var(--g); }
+.dtabs .num { font-size: 11px; background: var(--g); color: #fff; border-radius: 99px; padding: 0 6px; }
+.dtabs .num:empty { display: none; }
+.dtabs button.ping { animation: ping 1.2s ease-out; }
+@keyframes ping { 0% { background: var(--m2); } 100% { background: transparent; } }
+.dbody { flex: 1; overflow-y: auto; padding: 14px 20px 24px; }
+.d-item { margin-bottom: 14px; }
+.meter { height: 8px; background: var(--line-3); border-radius: 8px; overflow: hidden; margin: 6px 0 4px; }
+.meter i { display: block; height: 100%; background: var(--g); width: 0; transition: width .6s; border-radius: 8px; }
+.signal { background: var(--m3); border-left: 4px solid var(--g); padding: 8px 10px; font-size: 13px; margin-bottom: 6px; border-radius: 0 8px 8px 0; }
+.signal.flag { background: var(--warn-soft); border-left-color: #F0A13B; }
+.grp h4 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--g); display: flex; justify-content: space-between; }
+.grp h4 span { color: var(--ink-3); font-weight: 500; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line-3); font-size: 13.5px; align-items: baseline; }
+.row .k { color: var(--ink-2); cursor: help; display: inline-flex; gap: 5px; align-items: baseline; width: fit-content; border-bottom: 1px dotted var(--line); outline: none; }
+.row .k svg { width: 12px; height: 12px; color: var(--g); flex: none; transform: translateY(1px); }
+.row .v { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.row .v.empty { color: var(--line); font-weight: 400; }
+.row .v small { display: block; font-size: 10.5px; font-weight: 600; color: var(--g); text-transform: uppercase; letter-spacing: .04em; }
+.row .v small.inf { color: var(--warn); }
+.row.flash { animation: rowflash 1.6s ease-out; }
+@keyframes rowflash { from { background: var(--m1); } to { background: transparent; } }
+.q-card { border: 1px solid var(--line-2); border-radius: 12px; padding: 12px; font-size: 13px; margin-bottom: 10px; }
+.q-card.current { border-color: var(--g); box-shadow: inset 0 0 0 1px var(--g); }
+.q-top { display: flex; justify-content: space-between; font-weight: 700; }
+.q-sub { color: var(--ink-3); font-size: 12px; }
+.q-sub .down { color: var(--g); font-weight: 700; } .q-sub .up { color: var(--danger); font-weight: 700; }
+.q-tbl { width: 100%; border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.q-tbl th { text-align: left; font-size: 10.5px; color: var(--ink-3); text-transform: uppercase; padding: 3px 4px; }
+.q-tbl td { padding: 4px; border-top: 1px solid var(--line-3); }
+.q-tbl tr.sel td { font-weight: 700; color: var(--g); }
+.tip { position: fixed; z-index: 100; max-width: 260px; background: #1F1F1F; color: #fff; font-size: 12.5px; line-height: 1.45; padding: 8px 11px; border-radius: 6px; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,.25); animation: msg-in .15s ease-out; }
+.tip b { display: block; margin-bottom: 2px; }
+
+/* full form mode: the whole quote as one prefilled A2UI surface */
+.fullform { position: absolute; inset: 0 0 0 72px; overflow-y: auto; padding: 28px 24px 60px; z-index: 5; background: var(--m3); }
+.fullform .inner { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.fullform h1 { margin: 0; font-size: 34px; font-weight: 300; color: var(--g); }
+.fullform .lead { margin: -6px 0 0; color: var(--ink-2); }
+.fullform .form-card { max-width: none; max-height: none; }
+.fullform .form-body { overflow: visible; }
+
+/* end of form */
+.form-card.endcard .form-head h2 { color: var(--ink); font-weight: 400; }
+.done-box { text-align: center; padding: 20px 10px; }
+.done-box .big { width: 72px; height: 72px; border-radius: 50%; background: var(--g); color: #fff; display: grid; place-items: center; margin: 0 auto 12px; animation: spring .6s cubic-bezier(.34,1.56,.64,1); }
+.done-box h3 { font-weight: 300; color: var(--g); font-size: 26px; margin: 0 0 6px; }
+.peek { display: none; }
+
+/* ---------- developer trace (demo only) ---------- */
+.trace { position: fixed; left: 0; right: 0; bottom: 0; height: min(44vh, 440px); background: #fff; border-top: 1px solid var(--line-2); box-shadow: 0 -12px 40px rgba(0,0,0,.14); transform: translateY(100%); transition: transform .3s cubic-bezier(.2,.8,.2,1); z-index: 85; display: flex; flex-direction: column; }
+.trace.open { transform: none; }
+.trace-head { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line-3); flex-wrap: wrap; }
+.trace-head h3 { margin: 0; font-size: 13px; }
+.meters { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+.meters b { color: var(--ink); }
+.trace-head .sp { flex: 1; }
+.trace-list { flex: 1; overflow-y: auto; padding: 6px 10px 16px; font-size: 12px; }
+.tr-head { display: grid; grid-template-columns: 60px 190px 1fr; gap: 8px; width: 100%; text-align: left; background: none; border: 0; padding: 4px 6px; border-radius: 6px; align-items: center; }
+.tr-head:hover, .tr-head.open { background: var(--m4); }
+.tr-head.nodetail { cursor: default; }
+.tr-t { font: 11px var(--mono); color: var(--ink-3); }
+.tr-type { font: 600 11px var(--mono); padding: 1px 7px; border-radius: 5px; width: fit-content; background: var(--gray); color: var(--ink-2); }
+.t-model { background: var(--info-soft); color: var(--info); } .t-tool { background: var(--slate-soft); color: var(--slate); } .t-a2ui { background: var(--m2); color: var(--g2); }
+.t-state { background: var(--violet-soft); color: var(--violet); } .t-confirm, .t-warn, .t-rules { background: var(--warn-soft); color: var(--warn); } .t-db { background: var(--gray); color: var(--ink-2); }
+.t-turn { background: var(--ink); color: #fff; } .t-guard { background: var(--danger-soft); color: var(--danger); }
+.tr-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.trace-list pre.json { margin: 4px 0 8px 68px; max-height: 280px; }
+
+/* ---------- phone preview (demo only): the same page inside a phone frame ---------- */
+body.dev-phone .app { display: none; }
+.phones { height: calc(100vh - 44px); display: flex; align-items: center; justify-content: center; gap: 40px; padding: 16px 24px; background: radial-gradient(ellipse at 50% 30%, #F4F8F6, #DDE6E1); overflow: hidden; }
+body.dev-phone.trace-open .phones { height: calc(100vh - 44px - min(44vh, 440px)); }
+.phone { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; flex: none; }
+.phone figcaption { font-size: 13px; font-weight: 600; color: #2F3B35; }
+.phone .holder { position: relative; }
+.phone .frame { position: absolute; left: 0; top: 0; width: 414px; height: 868px; padding: 12px; border-radius: 60px; background: #121614; box-shadow: inset 0 0 0 2px #3A403D, inset 0 0 0 5px #121614, 0 30px 70px rgba(0,40,20,.28); transform-origin: 0 0; }
+.phone .screen { width: 390px; height: 844px; border-radius: 48px; overflow: hidden; background: #fff; position: relative; }
+.phone iframe { width: 390px; height: 844px; border: 0; display: block; }
+.phone .sb { position: absolute; left: 12px; right: 12px; top: 12px; height: 47px; display: flex; align-items: center; justify-content: space-between; padding: 4px 30px 0 44px; color: #fff; pointer-events: none; z-index: 3; font: 600 16px -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+.phone .sb span { display: inline-flex; gap: 6px; align-items: center; }
+.phone .sb svg { fill: currentColor; }
+.phone .island { position: absolute; top: 23px; left: 50%; width: 124px; height: 36px; margin-left: -62px; background: #000; border-radius: 20px; z-index: 4; pointer-events: none; }
+.phone .home { position: absolute; bottom: 20px; left: 50%; width: 136px; height: 5px; margin-left: -68px; background: #111; border-radius: 3px; z-index: 4; pointer-events: none; opacity: .8; }
+html.embed { --sat: 47px; --sab: 20px; }
+html.embed .demo-bar, html.embed .trace { display: none; }
+html.embed .app { height: calc(100vh - var(--sat)); margin-top: var(--sat); }
+html.embed body::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: var(--sat); background: var(--g3); z-index: 95; }
+
+/* ---------- phone layout (≤ 600 px) ---------- */
+@media (max-width: 600px) {
+  .demo-bar { overflow-x: auto; gap: 8px; padding: 0 10px; }
+  .demo-bar > b, .demo-bar .dnote, .demo-bar #dseg { display: none; }
+  .app { height: calc(100dvh - 44px); }
+  html.embed .app { height: calc(100vh - var(--sat)); }
+  .hdr { height: 56px; padding: 0 14px; gap: 8px; }
+  .logo svg { width: 26px; height: 29px; }
+  .logo .wm b { font-size: 19px; }
+  .logo .wm small, .qnum { display: none; }
+  .mode button { font-size: 0; gap: 0; padding: 8px 11px; }
+  .mode button svg { width: 17px; height: 17px; }
+  .agent-btn { width: 38px; height: 38px; border-radius: 50%; justify-content: center; background: rgba(255,255,255,.16); text-decoration: none; flex: none; }
+  .agent-btn .t { display: none; }
+  .steps { padding: 10px 14px 2px; }
+  #chat { top: 0 !important; bottom: calc(58px + var(--sab)) !important; border-radius: 0; }
+  #chat .chat-scroll { transition: transform .5s cubic-bezier(.2,.8,.2,1), opacity .4s ease; }
+  #chat.pushed .chat-scroll { transform: translateX(-38%); opacity: 0; pointer-events: none; }
+  #chat .composer { padding-bottom: 10px; }
+  .welcome .avatar { width: 64px; height: 70px; }
+  .welcome h2 { font-size: 26px; }
+  .form-stage { top: 8px !important; transition: bottom .25s ease; }
+  .form-stage > .form-card { height: 100%; border-radius: 14px; box-shadow: 0 10px 34px rgba(0,40,20,.20), 0 0 0 1px var(--line-3); }
+  .offers-inline { grid-template-columns: 1fr; }
+  .offers-inline .o { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; }
+  .offers-inline .o b { flex: 1; }
+  .rail { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: calc(58px + var(--sab)); flex-direction: row; justify-content: space-around; align-items: flex-start; padding: 8px 8px var(--sab); gap: 0; box-shadow: 0 -1px 0 var(--line-3); }
+  .rail .cnt { position: absolute; top: 5px; left: calc(12.5% + 6px); font-size: 10px; padding: 0 6px; }
+  .dossier { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 84%; border-radius: 20px 20px 0 0; box-shadow: 0 -12px 40px rgba(0,0,0,.2); }
+  .dhead { padding-top: 22px; }
+  .dhead::before { content: ""; position: absolute; top: 8px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--line-2); }
+  .dbody { padding: 12px 16px calc(20px + var(--sab)); }
+  .fullform { inset: 0; padding: 16px 12px calc(90px + var(--sab)); }
+  .fullform h1 { font-size: 26px; }
+  .peek { display: flex; position: absolute; left: 14px; right: 14px; top: 14px; z-index: 6; gap: 8px; align-items: flex-start; text-align: left; background: #fff; border: 1px solid var(--m1); border-radius: 12px; padding: 8px 12px 8px 8px; box-shadow: 0 10px 26px rgba(0,0,0,.18); font-size: 13.5px; line-height: 1.4; opacity: 0; transform: translateY(-14px) scale(.98); pointer-events: none; transition: opacity .25s, transform .35s cubic-bezier(.34,1.56,.64,1); }
+  .peek.on { opacity: 1; transform: none; pointer-events: auto; }
+  .peek .avatar { width: 22px; height: 24px; }
+  .peek .pt { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+}
+</style>
+</head>
+<body>
+<div class="demo-bar" role="region" aria-label="Contrôles de la démo">
+  <b>Démo</b>
+  <div class="seg2" id="dseg" role="group" aria-label="Appareil">
+    <button data-d="desktop" aria-pressed="true">Ordinateur</button>
+    <button data-d="phone" aria-pressed="false">Téléphone</button>
+  </div>
+  <span class="dnote">Agents simulés · aucun appel réseau · logo provisoire</span>
+  <span class="sp"></span>
+  <button class="pbtn" id="btn-trace" aria-pressed="false" title="Tool calls, A2UI messages, model calls, rule checks and Cosmos DB writes">Trace<span class="n" id="trace-count"></span></button>
+  <button class="pbtn" id="lambo" title="Ends the online quote with the VEHICULE_EXOTIQUE rule">Démo : règle « Lamborghini »</button>
+  <button class="pbtn" id="btn-reset">Rejouer</button>
+</div>
+<div class="app" id="app">
+  <header class="hdr">
+    <a class="logo" href="#" aria-label="Desjardins Assurances" onclick="return false"><span id="brand-mark"></span><span class="wm"><b>Desjardins</b><small>Assurances</small></span></a>
+    <span class="sp"></span>
+    <span class="qnum">Numéro de soumission : <b id="qnum">—</b></span>
+    <div class="mode" role="group" aria-label="Mode">
+      <button id="m-chat" aria-pressed="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Conversation</button>
+      <button id="m-form" aria-pressed="false"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Formulaire complet</button>
+    </div>
+    <button class="agent-btn" id="h-agent"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1"/><rect x="17" y="14" width="4" height="6" rx="1"/></svg><span class="t">Parler à un conseiller</span></button>
+  </header>
+  <nav class="steps" id="steps" aria-label="Étapes"><span>Documents</span><span>Vous</span><span>Véhicules</span><span>Conducteurs</span><span>Antécédents</span><span>Soumission</span></nav>
+  <main class="ws" id="ws">
+    <section class="chat" id="chat" aria-label="Conversation">
+      <div class="chat-scroll" id="scroll" aria-live="polite"></div>
+      <div class="sugg" id="sugg" aria-label="Réponses suggérées"></div>
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="Écrivez votre message…" aria-label="Message"></textarea>
+        <button class="icon-btn send" id="send" aria-label="Envoyer"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </section>
+    <div class="form-stage" id="stage" hidden></div>
+    <section class="fullform" id="fullform" hidden aria-label="Formulaire complet"></section>
+    <button class="rail" id="dtab" aria-expanded="false" aria-controls="dossier">
+      <span class="rail-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Dossier</span>
+      <span class="rail-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>Vous</span>
+      <span class="rail-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16V11l2-5h10l2 5v5"/><circle cx="8" cy="16" r="2"/><circle cx="16" cy="16" r="2"/></svg>Véhicule</span>
+      <span class="rail-i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V7l8-4z"/></svg>Soumission</span>
+      <span class="cnt" id="dcount">0</span>
+    </button>
+    <aside class="dossier" id="dossier" aria-label="Votre dossier" aria-hidden="true">
+      <div class="dhead"><h3>Votre dossier</h3><button class="x" id="dclose" aria-label="Fermer">×</button></div>
+      <div class="dtabs" role="tablist">
+        <button role="tab" data-tab="states" aria-selected="true">Renseignements</button>
+        <button role="tab" data-tab="quotes" aria-selected="false">Soumissions <span class="num" id="quotes-count"></span></button>
+      </div>
+      <div class="dbody" id="states" role="tabpanel"></div>
+      <div class="dbody" id="quotes" role="tabpanel" hidden></div>
+    </aside>
+  </main>
+</div>
+<div class="phones" id="phones" hidden aria-label="Aperçu sur téléphone"></div>
+<section class="trace" id="trace" aria-label="Trace">
+  <div class="trace-head">
+    <h3>Trace · BFF, hosted agent, tools, A2UI, rules</h3>
+    <div class="meters" id="meters"><span>No turns yet</span></div>
+    <span class="sp"></span>
+    <button class="btn small" id="trace-close">Close</button>
+  </div>
+  <div class="trace-list" id="trace-list"></div>
+</section>
+<div id="modal-root"></div>
+<script>/* @inline-json STATE_CATALOG ../../contracts/state-catalog.json */</script>
+<script>/* @inline a2ui.js */</script>
+<script>/* @inline journey.js */</script>
+</body>
+</html>

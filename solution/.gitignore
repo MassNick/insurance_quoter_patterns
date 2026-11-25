@@ -1,0 +1,15 @@
+# Generated locally; never committed with the solution.
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+test-results/
+playwright-report/
+e2e/.logs/
+.terraform/
+*.tfstate*
+*.tfplan
+.env
+.DS_Store

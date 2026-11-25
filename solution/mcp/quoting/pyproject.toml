@@ -1,0 +1,48 @@
+[project]
+name = "mcp-quoting"
+version = "0.1.0"
+description = "MCP server for the auto quoting agent: lookups, create_quote and modify_quote behind adapter interfaces (stub rating engine included)."
+requires-python = ">=3.13"
+dependencies = [
+  "quote-common",
+  "mcp>=2.2,<3",
+  "httpx>=0.27",
+  "jsonschema>=4.20",
+  "pydantic>=2.12",
+  "uvicorn>=0.31",
+]
+
+[project.optional-dependencies]
+# Real Azure wiring: Cosmos state reader, Entra tokens for the HTTP adapters, Application Insights export,
+# and the inbound Entra check of quote_common.auth (PyJWT).
+azure = ["azure-cosmos>=4.7", "azure-identity>=1.17", "aiohttp>=3.9", "azure-monitor-opentelemetry>=1.6", "quote-common[auth]"] # aiohttp: the async credentials
+test = ["pytest>=8", "ruff>=0.6", "quote-common[auth]"]
+
+[tool.uv.sources]
+quote-common = { path = "../../packages/quote_common", editable = true }
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_quoting"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+markers = [
+  "unit: one function or class, no I/O",
+  "component: the MCP server running in-process, every external dependency faked",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+extend-select = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"]  # a docstring on every module, class, function and method
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D103"]  # test functions are described by their names

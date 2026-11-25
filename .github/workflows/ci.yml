@@ -1,0 +1,159 @@
+# Checks on every pull request and push to main. cd.yml calls this workflow first (workflow_call), so a deploy never skips them.
+# The repository root holds the design folder; every job runs in solution/ (workflow defaults below).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  UV_PYTHON: "3.13"
+
+defaults:
+  run:
+    working-directory: solution # the repository root holds the design; the code is in solution/
+
+jobs:
+  # One job definition for every Python component: install, lint, unit + component tests. `azure` tests stay skipped (RUN_AZURE_TESTS unset).
+  python:
+    name: python / ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: quote_common, dir: packages/quote_common, pip: '-e ".[test]"' }
+          - { name: bff, dir: bff, pip: '-e ../packages/quote_common -e ".[test]"' }
+          - { name: quote-agent, dir: agents/quote-agent, pip: '-e ../../packages/quote_common -e ".[test]"' }
+          - { name: document-agent, dir: agents/document-agent, pip: '-e ../../packages/quote_common -e ".[test]"' }
+          - { name: mcp-quoting, dir: mcp/quoting, pip: '-e ../../packages/quote_common -e ".[test]"' }
+          - { name: mcp-a2ui, dir: mcp/a2ui, pip: '-e ../../packages/quote_common -e ".[test]"' }
+          - { name: deploy, dir: deploy, pip: "-r pyproject.toml --extra test" }
+    defaults:
+      run:
+        working-directory: solution/${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - name: Install
+        env:
+          PIP: ${{ matrix.pip }}
+        run: uv venv && eval "uv pip install $PIP"
+      - run: uvx ruff check .
+      - run: .venv/bin/python -m pytest -q
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: solution/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: solution/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:visual
+      - run: npm run test:e2e
+      # Failed visual tests leave *-actual.png, *-expected.png and *-diff.png under test-results/.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: web-test-results
+          path: |
+            solution/web/test-results/
+            solution/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - run: uv run --project deploy --extra test python deploy/check_contracts.py
+
+  terraform:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: solution/infra/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.17.2
+      - run: terraform fmt -check -recursive
+      - name: Validate both stacks (main and entra)
+        run: |
+          for dir in . entra; do
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.66.0
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # plugin download, avoids the anonymous rate limit
+        run: tflint --init && tflint --recursive --config "$PWD/.tflint.hcl"
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - name: checkov
+        run: uvx --from checkov==3.4.11 checkov --config-file .checkov.yaml
+
+  workflows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+      - name: shellcheck
+        run: shellcheck deploy/*.sh
+
+  # API journeys (e2e/test_api_journey.py): the four services as local processes (e2e/stack.py), no containers.
+  api-e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+      - name: One venv per service, as each README says
+        run: |
+          for d in bff mcp/quoting mcp/a2ui agents/quote-agent; do
+            (cd "$d" && uv venv && uv pip install -e "$GITHUB_WORKSPACE/solution/packages/quote_common" -e ".[test]")
+          done
+      - run: bff/.venv/bin/python -m pytest -c e2e/pytest.ini e2e
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ failure() }}
+        with:
+          name: api-e2e-logs
+          path: solution/e2e/.logs/
+          retention-days: 14
+
+  # Full stack: the service images with the fake model, driven by Playwright (web/e2e-stack). See e2e/README.md.
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker compose -f e2e/docker-compose.yml up --build --exit-code-from e2e
+      - if: ${{ !cancelled() }}
+        run: docker compose -f e2e/docker-compose.yml down -v
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-results
+          path: |
+            solution/e2e/test-results/
+            solution/e2e/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14

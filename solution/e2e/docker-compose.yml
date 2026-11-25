@@ -1,0 +1,56 @@
+# Full stack in containers, the same images as Azure, with the fake model and no Azure. The `e2e` container runs the
+# browser journeys (web/e2e-stack) and exits; CI runs:
+#   docker compose -f e2e/docker-compose.yml up --build --exit-code-from e2e
+# Results land in e2e/test-results and e2e/playwright-report. Keys are dev-only placeholders.
+x-dev-keys: &dev-keys
+  SESSION_REF_KEY: dev-only-local-key
+  SESSION_COOKIE_KEY: dev-only-session-cookie-key
+  LOG_LEVEL: INFO
+x-health: &health
+  interval: 3s
+  timeout: 3s
+  retries: 30
+
+services:
+  quoting:
+    build: { context: .., dockerfile: mcp/quoting/Dockerfile }
+    environment: { <<: *dev-keys, PORT: "8101", BFF_BASE_URL: http://bff:8000 }
+    healthcheck: { <<: *health, test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/healthz')"] }
+
+  a2ui:
+    build: { context: .., dockerfile: mcp/a2ui/Dockerfile }
+    environment: { <<: *dev-keys, PORT: "8102" }
+    healthcheck: { <<: *health, test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/healthz')"] }
+
+  agent:
+    build: { context: .., dockerfile: agents/quote-agent/Dockerfile }
+    environment:
+      <<: *dev-keys
+      PORT: "8088"
+      QUOTE_AGENT_MODEL: fake
+      MCP_QUOTING_URL: http://quoting:8101/mcp
+      MCP_A2UI_URL: http://a2ui:8102/mcp
+    depends_on: { quoting: { condition: service_healthy }, a2ui: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/readiness')"] }
+
+  bff:
+    build: { context: .., dockerfile: bff/Dockerfile }
+    environment:
+      <<: *dev-keys
+      PORT: "8000"
+      HOSTED_AGENT_URL: http://agent:8088
+      QUOTING_MCP_URL: http://quoting:8101/mcp
+      A2UI_MCP_URL: http://a2ui:8102/mcp
+      COOKIE_SECURE: "false"
+    depends_on: { agent: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"] }
+
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble
+    working_dir: /work/web
+    command: [sh, -c, "npm ci --no-audit --no-fund && npx playwright test -c playwright.stack.config.ts"]
+    environment: { E2E_BFF_URL: http://bff:8000, CI: "1" }
+    volumes:
+      - ..:/work
+      - /work/web/node_modules # Linux modules stay in the container, not in your checkout
+    depends_on: { bff: { condition: service_healthy } }

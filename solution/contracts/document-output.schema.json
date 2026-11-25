@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "document-output.schema.json",
+  "title": "DocumentAgentOutput",
+  "description": "Strict structured output of the document agent (Foundry prompt agent on gpt-5.6-luna). The BFF sends one file and a purpose; the agent returns only fields it can read. The BFF maps field names to state paths (see field_map) and merges them with source=document. Deterministic fields such as driver_license_number still need the double confirmation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["purpose", "document_ok", "fields"],
+  "properties": {
+    "purpose": { "enum": ["vin", "licence", "registration", "declaration"] },
+    "document_ok": { "type": "boolean", "description": "false when the file is not the expected document, is unreadable, or looks altered." },
+    "reason": { "type": "string", "maxLength": 200 },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vin": { "$ref": "#/$defs/field" },
+        "vehicle_year": { "$ref": "#/$defs/field" },
+        "vehicle_make": { "$ref": "#/$defs/field" },
+        "vehicle_model": { "$ref": "#/$defs/field" },
+        "plate": { "$ref": "#/$defs/field" },
+        "registered_owner": { "$ref": "#/$defs/field" },
+        "driver_license_number": { "$ref": "#/$defs/field" },
+        "first_name": { "$ref": "#/$defs/field" },
+        "last_name": { "$ref": "#/$defs/field" },
+        "date_of_birth": { "$ref": "#/$defs/field" },
+        "license_class": { "$ref": "#/$defs/field" },
+        "license_expiry": { "$ref": "#/$defs/field" },
+        "issuing_province": { "$ref": "#/$defs/field" },
+        "current_insurer": { "$ref": "#/$defs/field" },
+        "policy_expiry": { "$ref": "#/$defs/field" },
+        "years_with_current_insurer": { "$ref": "#/$defs/field" },
+        "has_claims": { "$ref": "#/$defs/field" }
+      }
+    }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "confidence"],
+      "properties": {
+        "value": { "type": ["string", "number", "boolean"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4, "description": "x, y, width, height as fractions of the page, for the review overlay." }
+      }
+    }
+  },
+  "field_map": {
+    "$comment": "Used by the BFF, not by the model. Index 0 is the policyholder or the vehicle the upload was attached to; a field-level upload targets the field's own path instead.",
+    "vin": "/vehicles/{i}/vin",
+    "vehicle_year": "/vehicles/{i}/vehicle_year",
+    "vehicle_make": "/vehicles/{i}/vehicle_make",
+    "vehicle_model": "/vehicles/{i}/vehicle_model",
+    "driver_license_number": "/drivers/{i}/driver_license_number",
+    "first_name": "/quote/first_name",
+    "last_name": "/quote/last_name",
+    "date_of_birth": "/quote/date_of_birth",
+    "years_with_current_insurer": "/drivers/0/years_with_current_insurer",
+    "has_claims": "/underwriting/has_claims"
+  }
+}

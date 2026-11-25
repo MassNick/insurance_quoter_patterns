@@ -1,0 +1,11 @@
+# Allow-list: the image needs only quote_common, this service and the contracts.
+*
+!packages/quote_common
+!mcp/quoting
+!contracts
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+mcp/quoting/tests

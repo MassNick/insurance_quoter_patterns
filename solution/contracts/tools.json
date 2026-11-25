@@ -1,0 +1,399 @@
+{
+  "$comment": "Every tool the main agent can see, grouped by where it runs. Descriptions are deliberately short: the main prompt plus all tool definitions must stay under 30k tokens (see prompts/token-budget.md). Each says what the tool does, when to call it and what comes back ('Ends the turn' for terminal tools, 'to explain' for narrate tools); injected_args are never mentioned, and customer-facing wording rules stay in the prompt. 'result_mode' is enforced by the hosted agent's function middleware: terminal tools end the model loop (their result goes to the UI and state, not back to the model); narrate tools feed their result back for one more completion.",
+  "toolbox": {
+    "name": "auto-quoting-toolbox",
+    "consumer_endpoint": "{project_endpoint}/toolboxes/auto-quoting-toolbox/mcp?api-version=v1",
+    "auth": "Entra token for https://ai.azure.com/.default, acquired with the hosted agent's agent identity",
+    "servers": [
+      {
+        "server_label": "quoting",
+        "server_url": "https://mcp-quoting.<aca-env>.canadacentral.azurecontainerapps.io/mcp",
+        "auth": "Entra (Foundry project managed identity, app role Tools.Invoke) through a RemoteTool project connection; the BFF calls lookups and BFF-side renders with its own identity (app roles Lookup.Read, Tools.Invoke)"
+      },
+      {
+        "server_label": "a2ui",
+        "server_url": "https://mcp-a2ui.<aca-env>.canadacentral.azurecontainerapps.io/mcp",
+        "auth": "Entra (Foundry project managed identity, app role Tools.Invoke) through a RemoteTool project connection; the BFF calls lookups and BFF-side renders with its own identity (app roles Lookup.Read, Tools.Invoke)"
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "quoting.identify_address",
+      "server": "quoting",
+      "result_mode": "terminal",
+      "description": "Normalize an address typed in chat into up to 5 candidates. Ends the turn; the result goes to the UI only.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "postal_code": {
+            "type": "string"
+          }
+        }
+      },
+      "output": "{ candidates: [{ address_line1, city, province_code, postal_code, confidence }] } -> shown as a pick list inside the open address form",
+      "wire_name": "quoting__identify_address"
+    },
+    {
+      "name": "quoting.identify_vehicle_type",
+      "server": "quoting",
+      "result_mode": "terminal",
+      "description": "Classify a make and model from chat as a vehicle_type. Ends the turn; the result goes to the UI only.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "make",
+          "model"
+        ],
+        "properties": {
+          "make": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          }
+        }
+      },
+      "output": "{ vehicle_type, body_style, confidence }",
+      "wire_name": "quoting__identify_vehicle_type"
+    },
+    {
+      "name": "quoting.lookup_make_model_year",
+      "server": "quoting",
+      "result_mode": "terminal",
+      "description": "Check a year, make and model from chat against the rating catalog; omit unknown parts to list valid options. Ends the turn; the result goes to the UI only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer"
+          },
+          "make": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      },
+      "output": "{ valid: bool, normalized: { year, make, model }, makes?: [], models?: [], trims?: [] }",
+      "wire_name": "quoting__lookup_make_model_year"
+    },
+    {
+      "name": "quoting.decode_vin",
+      "server": "quoting",
+      "result_mode": "terminal",
+      "description": "Check and decode a VIN from chat (year, make, model, trim). Ends the turn; the result goes to the UI only.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "vin"
+        ],
+        "properties": {
+          "vin": {
+            "type": "string",
+            "pattern": "^[A-HJ-NPR-Z0-9]{17}$"
+          }
+        }
+      },
+      "output": "{ valid_checksum, year, make, model, trim }",
+      "wire_name": "quoting__decode_vin"
+    },
+    {
+      "name": "quoting.create_quote",
+      "server": "quoting",
+      "result_mode": "narrate",
+      "description": "Price the committed answers once required fields are complete; takes no field values. Skip if INPUT has PRE_EXECUTED. Returns quote_id and offers to explain, or an error such as missing_fields.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "offer_types": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "essential",
+                "plus",
+                "premium"
+              ]
+            }
+          }
+        }
+      },
+      "output": "{ quote_id, version, offers: [{ offer_type, monthly, annual, deductible, coverages[] }], missing_fields?: [] }",
+      "wire_name": "quoting__create_quote",
+      "injected_args": {
+        "session_ref": "HMAC-signed 15-minute token from the BFF (session id + user id + expiry). Added by the hosted agent's function middleware after the model produces the call; it is not in the schema the model sees, so the model can never choose another session."
+      }
+    },
+    {
+      "name": "quoting.modify_quote",
+      "server": "quoting",
+      "result_mode": "narrate",
+      "description": "Reprice a quote with changed options; earlier versions are kept. Skip if INPUT has PRE_EXECUTED. Returns the new version and delta_monthly to explain.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "quote_id",
+          "changes"
+        ],
+        "properties": {
+          "quote_id": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "object",
+            "properties": {
+              "deductible": {
+                "type": "integer",
+                "description": "250, 500, 1000 or 2500."
+              },
+              "add_ons": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "roadside",
+                    "rental_car",
+                    "accident_forgiveness",
+                    "new_vehicle_replacement"
+                  ]
+                },
+                "description": "Full list wanted."
+              },
+              "offer_type": {
+                "enum": [
+                  "essential",
+                  "plus",
+                  "premium"
+                ]
+              },
+              "annual_kilometers": {
+                "type": "integer"
+              }
+            },
+            "description": "Only what changes; earlier options carry over."
+          }
+        }
+      },
+      "output": "{ quote_id, version, previous_version, delta_monthly, offers: [...] }",
+      "wire_name": "quoting__modify_quote",
+      "injected_args": {
+        "session_ref": "HMAC-signed 15-minute token from the BFF (session id + user id + expiry). Added by the hosted agent's function middleware after the model produces the call; it is not in the schema the model sees, so the model can never choose another session."
+      }
+    },
+    {
+      "name": "a2ui.render_form",
+      "server": "a2ui",
+      "result_mode": "terminal",
+      "description": "Open a form from a FormSpec bound to catalog keys; committed values fill in on their own. For several structured fields, documents or the driver-vehicle assignment. Ends the turn; the submit returns as INPUT.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "form_spec"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "form_spec": {
+            "$ref": "form-spec.schema.json"
+          }
+        }
+      },
+      "output": "MCP CallToolResult: a short text summary plus an EmbeddedResource (mimeType application/a2ui+json, annotations.audience [\"user\"]) whose text is [createSurface] in A2UI 1.0, carrying components and dataModel. The hosted agent forwards it to the BFF as an a2ui event; the model only sees { surface_id, status: shown }.",
+      "wire_name": "a2ui__render_form",
+      "injected_args": {
+        "state": "The committed session state, added by the hosted agent (or the BFF) so the server prefills bound fields.",
+        "mode": "\"new\" or \"edit\"; the BFF sets \"edit\" for reopened chips.",
+        "session_ref": "Added by the hosted agent middleware; never in the model-visible schema."
+      }
+    },
+    {
+      "name": "a2ui.update_form",
+      "server": "a2ui",
+      "result_mode": "terminal",
+      "description": "Set values or show errors on an open form; nothing is saved until the customer submits. To add or remove fields, call a2ui.render_form again. Ends the turn.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "surface_id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "surface_id": {
+            "type": "string"
+          },
+          "set": {
+            "type": "object",
+            "description": "JSON Pointer → value."
+          },
+          "errors": {
+            "type": "object",
+            "description": "JSON Pointer → message."
+          }
+        }
+      },
+      "output": "A2UI 1.0 updateComponents and/or updateDataModel for that surface",
+      "wire_name": "a2ui__update_form"
+    },
+    {
+      "name": "a2ui.close_form",
+      "server": "a2ui",
+      "result_mode": "terminal",
+      "description": "Close an open form unsaved, e.g. when the customer prefers to answer in chat. Ends the turn.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "surface_id"
+        ],
+        "properties": {
+          "surface_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "output": "A2UI 1.0 deleteSurface",
+      "wire_name": "a2ui__close_form"
+    },
+    {
+      "name": "a2ui.render_offers",
+      "server": "a2ui",
+      "result_mode": "terminal",
+      "description": "Show the offers of the quote priced this turn as selectable cards, beside your recommendation. Ends the turn; a click returns as INPUT kind=action.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "quote_id"
+        ],
+        "properties": {
+          "quote_id": {
+            "type": "string"
+          },
+          "highlight": {
+            "enum": [
+              "essential",
+              "plus",
+              "premium"
+            ],
+            "description": "Tagged as recommended."
+          },
+          "show_adjust": {
+            "type": "boolean",
+            "description": "Adds an adjust button."
+          }
+        }
+      },
+      "output": "A2UI 1.0 createSurface 'offers_{quote_id}_v{version}'",
+      "wire_name": "a2ui__render_offers",
+      "injected_args": {
+        "version": "From the last quoting.create_quote/modify_quote result in the turn.",
+        "offers": "Same source; the model never copies prices.",
+        "session_ref": "Added by the hosted agent middleware."
+      }
+    },
+    {
+      "name": "knowledge.knowledge_base_retrieve",
+      "server": "foundry-iq",
+      "result_mode": "narrate",
+      "description": "Search the auto-insurance knowledge base (coverages, rules, discounts, FAQ) before explaining any of them. Returns passages with sources to explain and cite.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        }
+      },
+      "output": "Grounded passages with citations (Foundry IQ agentic retrieval)",
+      "endpoint": "{search_endpoint}/knowledgebases/auto-quoting-kb/mcp?api-version=2026-11-01-preview",
+      "wire_name": "knowledge__knowledge_base_retrieve"
+    },
+    {
+      "name": "ui.suggest_replies",
+      "server": "local",
+      "result_mode": "terminal",
+      "description": "Show up to 4 clickable replies; a click sends the label as the customer's message. Call it in every reply, with your text; it ends the turn.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "kind": {
+                  "enum": [
+                    "reply",
+                    "action"
+                  ]
+                },
+                "action_id": {
+                  "type": "string",
+                  "description": "get_quote prices; talk_to_advisor starts the advisor hand-off."
+                }
+              }
+            }
+          }
+        }
+      },
+      "output": "suggestions event to the BFF. The BFF drops non-compliant items (PII patterns, proper names, values the customer has not given, labels over 40 characters) before relaying (D15); rendered as bubbles above the composer",
+      "wire_name": "ui__suggest_replies"
+    },
+    {
+      "name": "ui.set_phase",
+      "server": "local",
+      "result_mode": "terminal",
+      "description": "Record a phase change, with your text; it ends the turn.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "phase"
+        ],
+        "properties": {
+          "phase": {
+            "enum": [
+              "intent",
+              "gather",
+              "advise"
+            ]
+          }
+        }
+      },
+      "output": "phase event; stored in session state",
+      "wire_name": "ui__set_phase"
+    }
+  ],
+  "not_model_visible": [
+    {
+      "name": "document.extract",
+      "caller": "BFF",
+      "target": "Document agent (Foundry prompt agent, model gpt-5.6-luna)",
+      "description": "Extract fields from an uploaded image or PDF (driver's licence, VIN plate, registration, current policy declaration page). Returns field values with confidence and bounding boxes. Called by the BFF when the user uploads a file; results enter state with source=document."
+    }
+  ],
+  "$wire_names": "Logical names use a dot (quoting.identify_address). OpenAI-style function names allow only letters, digits, _ and -, so the name the model sees is the toolbox's namespaced form with __ in place of the dot (quoting__identify_address). The hosted agent keeps a logical-to-wire map; check the exact separator the toolbox serves (implementation-plan spike list, risk R11).",
+  "$a2ui": "A2UI 1.0 (https://a2ui.org/specification/v1.0-a2ui/). Field lookups from forms do not use these model tools: the renderer sends callAgentFunction and the BFF calls the quoting tools directly."
+}

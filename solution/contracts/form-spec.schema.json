@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "form-spec.schema.json",
+  "title": "FormSpec",
+  "description": "A form at the level of intent; the server builds widgets, labels and validation from the state catalog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "form_id",
+    "title",
+    "fields"
+  ],
+  "properties": {
+    "form_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,39}$",
+      "description": "Becomes the surface_id."
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "intro": {
+      "type": "string",
+      "maxLength": 240,
+      "description": "In-place note at the top of the form: why the agent is asking, or what it already knows."
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "quote",
+            "vehicle",
+            "driver",
+            "underwriting",
+            "household"
+          ]
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "Default binding scope. A field key such as vehicle_year resolves to /vehicles/{index}/vehicle_year."
+    },
+    "layout": {
+      "enum": [
+        "single",
+        "two_column",
+        "cards"
+      ],
+      "default": "two_column"
+    },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "items": {
+        "$ref": "#/$defs/field"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "style": {
+            "enum": [
+              "primary",
+              "secondary",
+              "link"
+            ]
+          }
+        }
+      },
+      "default": [
+        {
+          "id": "submit",
+          "label": "Continue",
+          "style": "primary"
+        }
+      ]
+    },
+    "intro_tone": {
+      "enum": [
+        "info",
+        "chat",
+        "warn",
+        "ok"
+      ],
+      "description": "Style of the intro note."
+    }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Catalog key (vehicle_year) or a JSON Pointer (/drivers/2/first_name). Omit for display-only widgets."
+        },
+        "widget": {
+          "enum": [
+            "auto",
+            "text",
+            "number",
+            "date",
+            "select",
+            "radio",
+            "chips",
+            "toggle",
+            "checkbox",
+            "slider",
+            "currency",
+            "email",
+            "phone",
+            "postal_code",
+            "ymm",
+            "vin",
+            "address_lookup",
+            "file",
+            "repeater",
+            "matrix",
+            "info",
+            "offer_cards",
+            "summary",
+            "time_slots",
+            "rating",
+            "textarea",
+            "document_drop",
+            "assignment_board",
+            "section"
+          ],
+          "default": "auto",
+          "description": "auto picks the widget from the catalog type. document_drop: licence, registration and current policy tiles read by the document agent, reviewed before commit. assignment_board: drag drivers into vehicle cards with one principal slot and an occasional slot."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "hint": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "What the agent wants in this field, in plain words."
+        },
+        "prefill": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {},
+            "source": {
+              "enum": [
+                "chat",
+                "document",
+                "lookup",
+                "previous_quote"
+              ]
+            },
+            "note": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "description": "Autofill. The note is shown in place, for example: You said 'a 2019 Civic' in chat."
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "description": "Overrides the catalog enum (for example a narrowed list)."
+        },
+        "repeat": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25
+            },
+            "item_label": {
+              "type": "string"
+            },
+            "min": {
+              "type": "integer"
+            },
+            "max": {
+              "type": "integer"
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/field"
+              }
+            },
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "First collection index (1 skips the policyholder in /drivers)."
+            },
+            "add_label": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "prefill": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "Rows to prefill, keyed by the repeated field keys."
+            }
+          },
+          "description": "Repeats a field or field group. Example: 10 VIN fields for 10 identical cars."
+        },
+        "field_actions": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "upload_photo",
+                  "lookup",
+                  "use_my_location",
+                  "copy_from_previous"
+                ]
+              }
+            }
+          },
+          "description": "Per-field buttons for atypical situations, such as Upload VIN photo, which sends the image to the document agent and autofills the field."
+        },
+        "visible_if": {
+          "type": "string",
+          "description": "Simple expression over sibling keys, for example outside_quebec == true."
+        },
+        "computed": {
+          "type": "string",
+          "description": "Read-only derived value, for example years_licensed = current_year - license_year."
+        },
+        "data": {
+          "type": "object",
+          "description": "Widget data that is not a catalog value: offers for offer_cards, rows and cols for matrix, documents (purpose, title, description, fills: extracted key → JSON Pointer) for document_drop, drivers and vehicles ({index, label, sub}) for assignment_board, summary items."
+        },
+        "tone": {
+          "enum": [
+            "info",
+            "chat",
+            "warn",
+            "ok"
+          ],
+          "description": "For the info widget: the in-place note style."
+        },
+        "help": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Hover help shown next to the label. Defaults to help_fr / help from the state catalog."
+        },
+        "placeholder": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "max": {
+          "type": "number",
+          "description": "Upper bound for slider or number widgets when the catalog has none."
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "Unit shown next to a slider value, for example km."
+        }
+      }
+    }
+  }
+}
