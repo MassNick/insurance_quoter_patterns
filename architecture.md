@@ -1,6 +1,6 @@
 # Architecture: auto insurance quoting agent on Azure AI Foundry
 
-Status: design only. Nothing is deployed. Last updated: 2026-11-24.
+Status: design, deployed once to a dev environment on 2026-11-25 ([§19 As deployed](#19-as-deployed-first-dev-deployment-2026-11-25)). Last updated: 2026-11-25.
 Read with: [`README.md`](README.md) (decisions D1–D20), [`contracts/`](contracts/) and [`prompts/`](prompts/).
 This document follows those contracts. If it disagrees with one, the contract wins and this file is wrong.
 
@@ -45,7 +45,7 @@ Market assumption, from `state-catalog.json`: Canada with Quebec as the home pro
 
 ## 2. Components
 
-Region: **Canada Central** is primary and **Canada East** is disaster recovery (D11). Hosted agents are offered in both ([limits and regions](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/limits-quotas-regions)). Model availability per region is **[UNVERIFIED]** (README Q2).
+Region: **Canada Central** is primary and **Canada East** is disaster recovery (D11). Hosted agents are offered in both ([limits and regions](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/limits-quotas-regions)). Model availability, checked on 2026-11-25: in Canada Central the GPT-5.6 models and `text-embedding-3-large` are offered as **Global Standard** only (§2, README Q2).
 
 | # | Component | Azure service | Suggested SKU / tier | Purpose |
 |---|---|---|---|---|
@@ -53,21 +53,21 @@ Region: **Canada Central** is primary and **Canada East** is disaster recovery (
 | 2 | Foundry project | Foundry project `auto-quoting` | — | Project endpoint `https://<resource>.services.ai.azure.com/api/projects/auto-quoting`. Owns agents, toolbox, connections and evaluations |
 | 3 | **Hosted agent `quote-agent`** | Foundry Agent Service, hosted agent (GA) | **1 vCPU / 2 GiB per session**. Idle timeout 15 min. Invocations protocol. Source-zip deploy (`runtime python_3_13`, `remote_build`) | The only container. Runs the **main agent** and the **memory agent** (Microsoft Agent Framework). Streams events to the BFF |
 | 4 | **Document agent** | Foundry Agent Service, prompt agent | Model deployment `gpt-5.6-luna` | Extracts fields from uploaded images and PDFs with strict JSON output. Called by the BFF only |
-| 5 | Model deployments | Foundry models | `MAIN_MODEL_DEPLOYMENT`: GPT-5.6 family, Data Zone Standard, PTU later. `MEMORY_MODEL_DEPLOYMENT`: small, fast model with structured outputs. `gpt-5.6-luna`: vision. An embedding model for Foundry IQ. Each has a guardrail attached | Inference. Names are placeholders until Q2 is answered |
+| 5 | Model deployments | Foundry models | Set in `solution/settings.yaml` (Q2 answered 2026-11-25): main `gpt-5.6-terra`, memory `gpt-5.6-luna`, document `gpt-5.6-luna` (vision), embeddings `text-embedding-3-large`. **Global Standard**: in Canada Central these models are offered only as Global Standard, so prompts may be processed outside Canada (Law 25 review before real customer data). PTU later. Each chat deployment has a guardrail attached (§14) | Inference |
 | 6 | **Toolbox `auto-quoting-toolbox`** | Foundry toolbox | One version, promoted to default | One MCP endpoint (`{project}/toolboxes/auto-quoting-toolbox/mcp?api-version=v1`) in front of `mcp-quoting` and `mcp-a2ui`. Entra auth. Tool names are namespaced (`quoting.*`, `a2ui.*`) ([toolbox overview](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/toolbox-overview)) |
 | 7 | **Foundry IQ knowledge base** `auto-quoting-kb` | Foundry IQ (Azure AI Search) | Knowledge base with one blob knowledge source. Reached through its MCP endpoint (`knowledge_base_retrieve`) | Coverage definitions, underwriting rules, discounts, FAQ. Answers come with citations ([Foundry IQ connect](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/foundry-iq-connect)) |
-| 8 | Azure AI Search | Azure AI Search | **Standard S1, 2 replicas** (read SLA), semantic ranker on, private endpoint | Index behind the knowledge base |
+| 8 | Azure AI Search | Azure AI Search | **Standard S2** by default (private ingestion of the knowledge source through shared private links), 2 replicas in production (read SLA), semantic ranker on, private endpoint. The dev deployment runs S1 with 1 replica | Index behind the knowledge base |
 | 9 | Knowledge documents | Blob Storage, container `kb-docs` | StorageV2, ZRS, private endpoint | Source documents indexed by Search. This is the draft's "Index in a blob storage" |
 | 10 | Azure Container Apps environment | Azure Container Apps | Workload-profiles environment, VNet-integrated, internal | Hosts `mcp-quoting`, `mcp-a2ui` and `bff` |
 | 11 | `mcp-quoting` | Container App (Python, MCP streamable HTTP) | Min 1, max 10 replicas. Internal ingress | Tools `identify_address`, `identify_vehicle_type`, `lookup_make_model_year`, `decode_vin`, `create_quote`, `modify_quote`. Wraps the rating engine (Q3) |
 | 12 | `mcp-a2ui` | Container App (Python, MCP streamable HTTP) | Min 1, max 10. Internal ingress. Stateless | Compiles **FormSpec → A2UI 1.0** messages using the state catalog, including `AssignmentBoard` and `DocumentDrop`. Tools `render_form`, `update_form`, `close_form`, `render_offers`. The BFF also calls `render_form` directly for reopened chips, full-form mode and the end-of-form surface |
-| 13 | **BFF** | Container App (Python, FastAPI) | Min 2, max 20. **Session affinity on**. Ingress through Front Door Private Link only | Owns session state, merge rules, deterministic confirmations, SSE relay, logging. Runs the end-of-form rules (`EndOfFormRules`, `bff/rules/end_of_form.py`) after every commit and creates advisor hand-offs (D19). Filters suggested replies (D15). Keeps the surface registry and renders reopened chips, full-form mode and the end-of-form surface through `mcp-a2ui` with no model call (D16, D20). Calls the hosted agent and the document agent |
-| 14 | **Cosmos DB** | Azure Cosmos DB for NoSQL | Autoscale. Database `quoting`. Multi-region: Canada Central write, Canada East read with service-managed failover. Private endpoint. Separate from the Foundry standard-setup database | Session state, full event log, audit trail, quotes, agent history, confirmations, advisor hand-offs (§6.3) |
+| 13 | **BFF** | Container App (Python, FastAPI) | Min 2, max 20. **No session affinity**: Container Apps allows sticky sessions only in single-revision mode, and canary releases need multiple revisions; session state is in Cosmos (§10). Ingress through Front Door Private Link only | Owns session state, merge rules, deterministic confirmations, SSE relay, logging. Runs the end-of-form rules (`EndOfFormRules`, `bff/rules/end_of_form.py`) after every commit and creates advisor hand-offs (D19). Filters suggested replies (D15). Keeps the surface registry and renders reopened chips, full-form mode and the end-of-form surface through `mcp-a2ui` with no model call (D16, D20). Calls the hosted agent and the document agent |
+| 14 | **Cosmos DB** | Azure Cosmos DB for NoSQL | Autoscale. Database `quoting`. Multi-region: Canada Central write, Canada East read with service-managed failover. Private endpoint. The dev deployment puts both accounts in Canada East (`cosmos_location`): the subscription had no Cosmos capacity in Canada Central ("high demand", region access request needed). Separate from the Foundry standard-setup database | Session state, full event log, audit trail, quotes, agent history, confirmations, advisor hand-offs (§6.3) |
 | 15 | Uploads | Blob Storage, container `uploads` | StorageV2, ZRS, private, lifecycle delete after 30 days. **Microsoft Defender for Storage** with on-upload malware scanning | Customer documents for the document agent |
 | 16 | Key Vault | Azure Key Vault | Standard, RBAC mode, private endpoint | `session_ref` signing key and the External ID client certificate. No keys in code or environment variables |
 | 17 | Observability | Application Insights (workspace-based) + Log Analytics | Connected to the Foundry project | OTel traces, metrics and logs from every tier. Foundry tracing view |
 | 18 | Edge | Azure Front Door Premium + WAF | Managed rules, bot protection, rate limiting, Private Link to Container Apps | TLS, WAF and global entry for the web app and `/api` |
-| 19 | Frontend | Azure Static Web Apps Standard, behind Front Door | — | React + TypeScript app with the A2UI renderer and custom catalog, in the Variation C shell for Desjardins Assurances (D12, §7.5): French first, form chips, "Votre dossier" panel, full-form toggle, phone layout at 600 px and below. Outside the core Azure box in the draft |
+| 19 | Frontend | Container App (nginx, non-root, port 8080) behind Front Door (`deploy_web`); Static Web Apps remains an option | — | React + TypeScript app with the A2UI renderer and custom catalog, in the Variation C shell for Desjardins Assurances (D12, §7.5): French first, form chips, "Votre dossier" panel, full-form toggle, phone layout at 600 px and below. Outside the core Azure box in the draft |
 | 20 | Customer identity | Microsoft Entra External ID (CIAM tenant) | — | Optional sign-in. The journey starts as an anonymous session (Q4) |
 | 21 | Container registry | Azure Container Registry | Premium, private endpoint | Images for `mcp-quoting`, `mcp-a2ui` and `bff`. The hosted agent uses source-zip deploy, so it needs no image |
 | 22 | Network | VNet with subnets: `aca-infra`, `private-endpoints`, `agent-egress` (hosted agent BYO VNet). Private DNS zones | — | Private data plane (§12) |
@@ -156,7 +156,7 @@ What changed from the draft:
     - the toolbox MCP endpoint, through `MCPStreamableHTTPTool`;
     - the Foundry IQ MCP endpoint;
     - local functions `ui.suggest_replies` and `ui.set_phase`.
-  - `memory`: `MEMORY_MODEL_DEPLOYMENT`, system prompt [`prompts/memory-agent.md`](prompts/memory-agent.md), `response_format` = `memory-output.schema.json` in strict mode, and **no tools**.
+  - `memory`: `MEMORY_MODEL_DEPLOYMENT`, system prompt [`prompts/memory-agent.md`](prompts/memory-agent.md), `response_format` = `memory-output.schema.json`, **not strict**, and **no tools**. Strict mode rejects the schema (`invalid_json_schema`): a change's `value` is any JSON, which strict mode cannot express. Every output is validated against the same schema; a failure or the 8 s timeout (`settings.yaml`) becomes a memory error and the turn goes on (found on the dev deploy: until then no consent change reached the BFF).
 - **Per turn** (§5 a):
   1. Load history from Cosmos `agent_history` (`CosmosHistoryProvider`, partition key `/session_id`). Append the BFF's `system_notes` (changes made between turns with no model call, such as a reopened-form save, a full-form save, a rule hit or a hand-off) as system messages, before the new input.
   2. Run `memory` and `main` concurrently (`asyncio.gather`).
@@ -199,7 +199,8 @@ The memory agent runs on **every** turn, including form submissions, button acti
 
 ### 4.4 Toolbox and Foundry IQ
 
-- The **toolbox** `auto-quoting-toolbox` has two MCP entries: `quoting` → `mcp-quoting` and `a2ui` → `mcp-a2ui`. Each uses a `RemoteTool` project connection with Entra auth, set to `require_approval="never"`. Hosted agents get platform tools only through a toolbox MCP endpoint ([toolbox](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/tools/toolbox)). Whether the GA label covers the toolbox itself is **[UNVERIFIED]**.
+- The **toolbox** `auto-quoting-toolbox` has two MCP entries: `quoting` → `mcp-quoting` and `a2ui` → `mcp-a2ui`. Each uses a `RemoteTool` project connection with Entra auth, set to `require_approval="never"`. Hosted agents get platform tools only through a toolbox MCP endpoint ([toolbox](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/tools/toolbox)). Whether the GA label covers the toolbox itself is **[UNVERIFIED]**. Verified on the dev deploy: the toolbox reaches the MCP servers in the internal Container Apps environment, serves their tools as `<server_label>___<tool>` (for example `a2ui___render_form`), and passes the A2UI `EmbeddedResource` through.
+- **Injected arguments through the toolbox.** The model never sees `session_ref`, `state`, `mode` or the quote `version` and `offers`: the hosted agent hides them from the schema it sends and adds them at call time. It gives each tool a fresh copy of the hidden schema per call, because the OpenAI client sets `additionalProperties: false` in place on the schema it sends, which made the call's own validation reject the re-added arguments (no form opened on the first dev deploy).
 - **Foundry IQ.** The knowledge base `auto-quoting-kb` has one knowledge source: blob container `kb-docs`, indexed by AI Search.
   - The main agent calls `knowledge_base_retrieve` on `{search_endpoint}/knowledgebases/auto-quoting-kb/mcp?api-version=2026-11-01-preview`. That API version is preview **[UNVERIFIED GA date]**.
   - The draft draws a separate edge to Foundry IQ, and this design keeps it. Adding the knowledge base as a third toolbox entry is equivalent. It would give one MCP connection instead of two and is a valid simplification.
@@ -715,10 +716,11 @@ The client demo UI for Desjardins Assurances is **Variation C, "Assistant plein 
 
 ### 8.2 Mechanics
 
-1. **One completion with text and tool calls.** The main agent's single completion streams the reply text and issues all its tool calls together: the form, suggestions and phase. Parallel tool calls are allowed.
+1. **One completion with text and tool calls.** The main agent's single completion streams the reply text and issues all its tool calls together: the form, suggestions and phase. Parallel tool calls are allowed. The main prompt says so explicitly: on the dev deploy the model sometimes called the tools without text, and nothing written after a terminal tool is shown.
 2. **Function middleware.** An Agent Framework `@function_middleware` looks up the tool's `result_mode`.
    - For terminal tools it runs the tool, forwards the result, sets `context.result` to a stub, and raises **`MiddlewareTermination`**. That ends the function-invocation loop, so no follow-up completion happens (pattern from the [Agent Framework middleware docs](https://learn.microsoft.com/en-us/agent-framework/concepts/agents/middleware/?pivots=programming-language-python)).
-   - Ending the loop correctly when several parallel terminal calls run during streaming is **[UNVERIFIED]**. Spike it first (implementation plan).
+   - **The batch decides together** (`Turn.settle` in the hosted agent). Parallel calls finish at different times, so each finished call waits for the rest of its batch (30 s at most); a fast `ui.suggest_replies` cannot end the turn before a slower call fails.
+   - **One corrective completion.** When a call of the batch failed (an `{"error": ...}` result, such as `mcp-a2ui` refusing an invalid FormSpec), the turn goes on once so the model sees the error and fixes its call; a second failure ends the turn. Every failure reason is logged, redacted.
 3. **No-text fallback.** If a completion has terminal tool calls but no text, the hosted agent emits one templated sentence from the FormSpec title, for example "Here is a short form about your vehicle." That costs no extra call.
 4. **Pre-executed actions.** When the input is a button action, the orchestrator code runs the narrate tool **before** the model call and puts the result into INPUT. The main agent narrates it inside its single completion. Examples:
    - `get_quote` → `create_quote`;
@@ -774,12 +776,12 @@ Reconnects: each event has `seq`. A dropped SSE stream reconnects with `Last-Eve
 1. The static prefix (system prompt, tool definitions, compact key list) comes first and is byte-identical across turns and sessions. It changes only when `PROMPT_VERSION` changes. It is about 4k tokens against the 30k cap.
 2. The append-only history comes next.
 3. Volatile STATE, SIGNALS, PREFERENCES, RULES and INPUT come last, and are never inserted before history. System notes from the BFF are appended to the history, after the previous turn and before the new input, so the history stays append-only.
-4. `prompt_cache_key = "{agent}:{prompt_version}:{session_id}"` is set on every main and memory call ([prompt caching](https://learn.microsoft.com/azure/foundry/openai/how-to/prompt-caching)). Passing it through the Agent Framework Foundry client's options is **[UNVERIFIED]**.
+4. `prompt_cache_key = "quote-{agent}:{prompt_version}:{session_id}"` is set on every main and memory call ([prompt caching](https://learn.microsoft.com/azure/foundry/openai/how-to/prompt-caching)). Passing it through the Agent Framework Foundry client's options is **[UNVERIFIED]**.
 5. `cached_tokens` is recorded per call. The target is at least 70% from turn 3 onward.
 
 **BFF session cache:**
 - Each BFF replica keeps an in-process LRU keyed by `session_id`. It holds the state document plus `_etag`, open surfaces and bound paths, pending confirmations and the last `seq`.
-- **Container Apps session affinity** (sticky cookie) keeps a session on one replica, so the cache stays warm. Cosmos remains the source of truth. On a cache miss, replica restart or etag conflict, the BFF reloads from `sessions`.
+- There is **no session affinity** (§2: it would force single-revision mode), so a session can move between replicas. Cosmos remains the source of truth: on a cache miss, a replica change, a restart or an etag conflict, the BFF reloads from `sessions`.
 - Writes are write-through. There is no write-behind.
 
 **Tool-side caches:**
@@ -804,10 +806,10 @@ No keys anywhere. Every service-to-service call uses Entra tokens from managed i
 | BFF MI | `mcp-quoting` (YMM and address proxy for the renderer) | App role `Lookup.Read` | `mcp-quoting` app registration |
 | BFF MI | `mcp-a2ui` (surfaces the BFF renders: reopened chips, `full_form`, `end_of_form`) | App role `Tools.Invoke` | `mcp-a2ui` app registration. The compiler has no data access, so this grants no data |
 | **quote-agent agent identity** | Model deployments | Default (inference through the project endpoint) | Project |
-| quote-agent agent identity | Toolbox MCP endpoint | Project role allowing toolbox calls **[UNVERIFIED exact role]** | Toolbox `auto-quoting-toolbox` |
+| quote-agent agent identity | Toolbox MCP endpoint | **Foundry User** (Azure AI User) on the project, granted by Terraform once the agent exists (`quote_agent_principal_id`); toolbox calls worked on the dev deploy | Toolbox `auto-quoting-toolbox` |
 | quote-agent agent identity | Foundry IQ knowledge base | **Search Index Data Reader** | Search service (index scope where supported) |
 | quote-agent agent identity | Cosmos DB | Cosmos DB Built-in Data Contributor | Container **`agent_history` only** |
-| Project managed identity | AI Search (`RemoteTool` connection) | Search Index Data Reader | Search service |
+| Project managed identity | AI Search (`RemoteTool` connection) | Search Index Data Reader | Search service. The solution's hosted agent calls Foundry IQ directly with its own identity (row above), so this connection exists but is unused |
 | Project MI | `mcp-quoting`, `mcp-a2ui` (toolbox connections) | App role `Tools.Invoke` | Each MCP app registration |
 | Search service MI | Foundry resource | Cognitive Services User (knowledge-base query planning) | Foundry resource |
 | Search service MI | Blob `kb-docs` | Storage Blob Data Reader | Container `kb-docs` |
@@ -821,7 +823,7 @@ No keys anywhere. Every service-to-service call uses Entra tokens from managed i
 **MCP server authentication.** Both MCP servers validate the Entra access token:
 
 - the issuer is the tenant;
-- the audience is `api://mcp-quoting` or `api://mcp-a2ui`;
+- the audience is the app registration's identifier URI, `api://<tenant-id>/<workload>-<env>-mcp-quoting` or `-mcp-a2ui`, or its client id. The registrations issue **v2 tokens** (`aud` is the client id), and the URI names the tenant because the default app management policy refuses other `api://` URIs. Every registration lists its owners: without one, a user without a directory role can no longer change or delete it (both found on the dev deploy);
 - the caller's `azp`/`appid` is on an allow-list (the project MI, plus the BFF MI for lookups on `mcp-quoting` and for BFF-side renders on `mcp-a2ui`);
 - the app role is present.
 
@@ -831,14 +833,15 @@ They reject everything else. `mcp-quoting` also verifies the `session_ref` HMAC 
 
 ## 12. Networking
 
-- **Ingress:** browser → Front Door Premium (WAF) → Private Link → Container Apps environment (internal) → BFF. The frontend's static assets come from Static Web Apps behind the same Front Door profile.
+- **Ingress:** browser → Front Door Premium (WAF) → Private Link → Container Apps environment (internal) → BFF and the web app. Each Private Link connection must be approved on the Container Apps environment (`deploy/post_deploy.sh approve`); on the dev deploy the routes served only after they were re-saved once the approval had been made (`az afd route update`), about an hour of "Page not found" before that.
 - **Container Apps environment:** VNet-integrated with internal ingress only. `mcp-quoting` and `mcp-a2ui` have no public endpoint.
 - **Foundry:**
   - The Foundry resource has public network access disabled and is reached through a private endpoint from the BFF subnet.
   - The project uses **standard setup with private networking**. The hosted agent's egress runs through the BYO `agent-egress` subnet.
-  - Hosted-agent **network egress controls** (GA) allow-list only the toolbox, the Foundry IQ endpoint, Cosmos DB and Application Insights.
+  - Hosted-agent **network egress controls** (GA) allow-list only the toolbox, the Foundry IQ endpoint, Cosmos DB and Application Insights. The dev deploy runs them in `Audit` mode; the agent reached all four.
+  - Azure creates the **account capability host** with the network injection (`<account>@aml_aiagentservice`, on the agent subnet); only the project capability host is declared.
   - Toolbox calls into the private MCP servers need the project's VNet path to the Container Apps environment. For the MCP tool this requires standard setup plus VNet; toolbox-routed MCP to internal Container Apps ingress is **confirmed by the team (2026-11-25)**: the toolbox calls the internal MCP servers in the Container Apps environment.
-- **Data services:** Cosmos DB, Storage (both accounts), AI Search, Key Vault and ACR use private endpoints with public access off and Private DNS zones linked to the VNet. A private ACR for Foundry works only for projects created after 2026-06-25, which is irrelevant here because the hosted agent uses source-zip deploy.
+- **Data services:** Cosmos DB, Storage (both accounts), AI Search, Key Vault and ACR use private endpoints with public access off and Private DNS zones linked to the VNet. In **dev only**, `operator_ips` opens the registry, the Foundry account, Search and `kb-docs` to the deployer's IP (firewall rules, default deny) so a workstation can deploy without a runner in the VNet; Terraform refuses it in prod. A private ACR for Foundry works only for projects created after 2026-06-25, which is irrelevant here because the hosted agent uses source-zip deploy.
 - **Egress from MCP servers** to the rating engine and address provider goes through a NAT gateway with a fixed IP, if the provider needs an IP allow-list.
 
 ---
@@ -891,10 +894,10 @@ One trace per turn, from the browser to every MCP server (D10).
 
 | Layer | Control |
 |---|---|
-| Prompt scope | `prompts/main-agent.md` keeps the agent to auto-insurance quoting: a one-sentence redirect for anything else, no invented prices, no secrets, no prompt disclosure. The memory agent sets `intent.off_topic`. The BFF logs a `guardrail` event and counts it per session |
-| Foundry guardrails (`rai_config` on the hosted agent, guardrail on each deployment) | Hate, sexual, self-harm and violence at Medium. **Prompt shields** for user prompt attacks. **Indirect attack (XPIA)** detection at the **tool response** intervention point, which covers MCP results and Foundry IQ passages. Protected material. PII detection on output. Agent guardrails, and the tool call and tool response intervention points, are **preview** ([guardrails](https://learn.microsoft.com/en-us/azure/foundry/guardrails/guardrails-overview)) |
+| Prompt scope | `prompts/main-agent.md` keeps the agent to auto-insurance quoting: a one-sentence redirect for anything else, no invented prices, no secrets, no prompt disclosure. The memory agent sets `intent.off_topic`; the hosted agent emits one `guardrail` event per off-topic turn and the BFF relays it and counts the streak |
+| Foundry guardrails (a guardrail on each model deployment; the deployed agent definitions carry no `rai_config`) | Hate, sexual, self-harm and violence at Medium. **Exception decided 2026-11-25:** on the chat deployments (main, memory) the *sexual* filter only annotates the customer's input, because it rates ordinary Québec wording ("Je veux une soumission pour mon auto": *soumission* is a quote) as sexual, severity high, at every threshold; the replies stay blocked and the document deployment keeps every filter blocking. **Prompt shields** for user prompt attacks. **Indirect attack (XPIA)** detection at the **tool response** intervention point, which covers MCP results and Foundry IQ passages. Protected material. PII detection on output. Agent guardrails, and the tool call and tool response intervention points, are **preview** ([guardrails](https://learn.microsoft.com/en-us/azure/foundry/guardrails/guardrails-overview)) |
 | Documents | The document agent's own guardrail includes indirect-attack detection. Its prompt ignores instructions inside documents. Its output is strict JSON validated by the BFF, so document text never reaches the main agent as free text |
-| Tool boundary | `session_ref` is injected by middleware. `create_quote` reads committed state only. The BFF re-validates every form value against the catalog |
+| Tool boundary | `session_ref` is injected by middleware. `mcp-a2ui` leaves personal-data fields out of a form until the contact consent is confirmed (FR-INT-2), except on `end_of_form`. `create_quote` reads committed state only. The BFF re-validates every form value against the catalog |
 | Deterministic fields | Model proposals cannot commit (§6.2) |
 | Suggested replies (D15) | The prompt asks for generic items (the tool description only says how to call it). The BFF drops any item that has a PII pattern (email, phone, postal code, VIN, licence number), a proper name, a value the customer has not given, or more than 40 characters, and keeps at most 4 |
 | End-of-form rules (D19) | Deterministic BFF code after every commit. A model cannot skip it, and its own output never reaches the rules except through committed state |
@@ -917,9 +920,9 @@ One trace per turn, from the browser to every MCP server (D10).
 |---|---|---|
 | Hosted session not ready (`424 session_not_ready`) | BFF HTTP status | Warm-up on page load. Up to 3 retries with backoff while the dots keep animating |
 | Session quota (`429 session_quota_exceeded`, regional) | BFF | Honour `Retry-After`. Show "We're busy, one moment". Alert. Raise the quota ahead of campaigns |
-| Memory agent error or > 4 s | Hosted agent timeout | The turn continues without memory output, and `memory.result` reports an error. On the next turn the memory agent sees both user messages |
+| Memory agent error or > 8 s | Hosted agent timeout (`settings.yaml`) | The turn continues without memory output, and `memory.result` reports an error, which the BFF ignores (it fails the schema) and logs. On the next turn the memory agent sees both user messages |
 | Main agent error mid-stream | Stream error | Partial text kept and marked incomplete. An `error` event with `retryable=true` shows an inline retry bubble |
-| MCP tool error (terminal) | Middleware | `render_form` failure: a one-line fallback asks the question in chat. Lookup failure: the form keeps manual entry |
+| MCP tool error (terminal) | Middleware | First, one corrective completion: the model sees the error and fixes its call (§8.2). If it fails again, `render_form` falls back to a one-line question in chat, and a lookup failure leaves the form on manual entry |
 | Quote engine down | `create_quote` error | The agent apologizes and offers a callback (callback form). The quote is retried on the next action |
 | Cosmos 429 or etag conflict | SDK, BFF | SDK retry. Etag conflict leads to a reload and re-merge. The cache keeps the UI responsive |
 | Document unreadable or `document_ok=false` | Document agent output | "Please retake the photo". Manual entry stays available |
@@ -927,7 +930,7 @@ One trace per turn, from the browser to every MCP server (D10).
 | `EndOfFormRules` raises an error | BFF exception | The commit stands. The BFF logs the error, alerts, and blocks `get_quote` until the check passes on a later commit. The journey does not end on an error (fail closed for pricing, open for gathering) |
 | `mcp-a2ui` unavailable for a BFF render (reopen, full form, end of form) | BFF HTTP status | Reopen and full form show "Try again in a moment" and the chip keeps its state. For the end-of-form surface, the BFF shows a templated chat message with the reason and the "Parler à un conseiller" button, and retries the render |
 | Advisor system does not pick up a hand-off (Q7) | `handoffs` status unchanged after the agreed delay | Alert to the advisor team. The row stays the system of record, and the customer already has the reference |
-| SSE disconnect | Browser | Reconnect with `Last-Event-ID`. The BFF replays from `events` |
+| SSE disconnect | Browser | The web app does not re-send by itself (the BFF does not replay a turn yet, so a re-post would run the message twice); the reply bubble shows "Réessayer" and the customer decides |
 | Region outage | Front Door health probes | Fail over to Canada East: Cosmos multi-region failover, a standby Foundry project with the same agents (redeploy from the same code zip), and Container Apps in Canada East. Targets: RPO ≤ 5 min (Cosmos), RTO ≤ 1 h (to confirm) |
 
 ---
@@ -941,7 +944,7 @@ One trace per turn, from the browser to every MCP server (D10).
 5. **Hosted agent sizing:** 1 vCPU / 2 GiB, billed only while sessions are active, with a 15-minute idle timeout and scale to zero. Oversizing multiplies cost by concurrency. Exact rates are **[UNVERIFIED]**.
 6. **The document agent runs only on upload.** Foundry IQ is used mainly in Advise.
 7. **Deterministic work stays out of the model** (§8.5): the rule check, the end-of-form surface, reopening, full-form mode and the suggestion filter cost no tokens.
-8. **Cosmos** autoscale plus TTLs. **AI Search** S1 with 2 replicas in production and Basic in non-production.
+8. **Cosmos** autoscale plus TTLs. **AI Search** S2 with 2 replicas in production; the dev deployment runs S1 with 1 replica and Cosmos capped at 1,000 RU/s per container, about US$900 a month in list prices (Front Door Premium and Search dominate).
 9. **Off-topic short-circuit.** After 3 consecutive off-topic turns, the BFF sends a canned redirect without calling the agent.
 10. **PTU** for the main deployment once sustained volume justifies it.
 11. **Cost per quote** is tracked in the workbook: (model tokens − cached discount) + hosted compute + tool calls + Search + Cosmos RU, divided by quotes created. The target is in NFR-COST-1.
@@ -952,22 +955,41 @@ One trace per turn, from the browser to every MCP server (D10).
 
 These items come from [`../microsoft-foundry-agents/findings/2026-11-foundry-docs.md`](../microsoft-foundry-agents/findings/2026-11-foundry-docs.md) (§11, §13) and from this design. Each one must be confirmed, by spike or by the docs, before the work that depends on it.
 
-| # | Item | Depends on it |
-|---|---|---|
-| V1 | `agent-framework-foundry-hosting` (Beta) and `azure-ai-agentserver-invocations` versions. `InvocationsHostServer` streams custom SSE events | §4.1, §5 |
-| V2 | Invocations protocol version string for `ProtocolVersionRecord`, and the SSE shape on `/invocations` | §4.1 |
-| V3 | `MiddlewareTermination` in a function middleware ends the tool loop cleanly with parallel terminal calls while streaming | §8 |
-| V4 | The main model reliably emits text **and** tool calls in one streamed completion | §8.2 |
-| V5 | `CosmosHistoryProvider` (preview) constructor, partition key `/session_id`, identity auth | §4.1, §6.3 |
-| V6 | `prompt_cache_key` reaches the model through the Agent Framework Foundry client | §10 |
-| V7 | Toolbox GA status. The role the agent identity needs to call the toolbox. Toolbox reach to internal Container Apps MCP servers | §4.4, §11, §12 |
-| V8 | Foundry IQ GA status. Knowledge-base MCP `api-version=2026-11-01-preview`. `RemoteTool` connection (preview) | §4.4 |
-| V9 | `gpt-5.6-luna`, the main and memory deployments: availability in Canada Central (or Data Zone), structured outputs, and vision for luna | §2, Q2 |
-| V10 | Agent guardrails (preview): tool response intervention point and XPIA on MCP results | §14 |
-| V11 | A2UI 1.0 support in the chosen React/web renderer (Google's 1.0 post says some platform renderers are still on 0.9.1 with 1.0 "coming soon"; Lit/web-core samples show 1.0), and the basic catalog's validation function names | §7 |
-| V12 | Front Door passes SSE unbuffered with compression off. Origin response timeout is long enough for long turns | §9 |
-| V13 | Hosted agent outbound reach and egress allow-list behaviour in a private-network project | §12 |
-| V14 | Hosted agent pricing (vCPU-hour, GiB-hour) and Foundry IQ pricing, for the cost per quote | §17 |
-| V15 | Whether `get_openai_client(agent_name=...)` needs `allow_preview=True` (used by the BFF for the document agent) | §4.3 |
-| V16 | The chosen renderer can host `AssignmentBoard` drag and drop on iOS Safari and Android Chrome (pointer events, auto-scroll while dragging), with tap and keyboard alternatives that meet WCAG 2.2 "Dragging Movements" (2.5.7) | §7.2, D17 |
-| V17 | Desjardins brand assets (official logo SVG, colours, font licence) and the brand team's approval, before any external showing | §7.5, D12 |
+| # | Item | Depends on it | Dev deploy (2026-11-25) |
+|---|---|---|---|
+| V1 | `agent-framework-foundry-hosting` (Beta) and `azure-ai-agentserver-invocations` versions. `InvocationsHostServer` streams custom SSE events | §4.1, §5 | Worked on the dev deploy (agent-framework-foundry-hosting 1.0.0b261112, azure-ai-agentserver-invocations 1.3.0) |
+| V2 | Invocations protocol version string for `ProtocolVersionRecord`, and the SSE shape on `/invocations` | §4.1 | — |
+| V3 | `MiddlewareTermination` in a function middleware ends the tool loop cleanly with parallel terminal calls while streaming | §8 | Solved differently: the batch decides together (`Turn.settle`, §8.2) |
+| V4 | The main model reliably emits text **and** tool calls in one streamed completion | §8.2 | Not always: the model sometimes calls tools without text. The prompt now requires the text in the same response |
+| V5 | `CosmosHistoryProvider` (preview) constructor, partition key `/session_id`, identity auth | §4.1, §6.3 | Worked (agent history in Cosmos, Canada East) |
+| V6 | `prompt_cache_key` reaches the model through the Agent Framework Foundry client | §10 | — |
+| V7 | Toolbox GA status. The role the agent identity needs to call the toolbox. Toolbox reach to internal Container Apps MCP servers | §4.4, §11, §12 | Reach verified; tools served as `<label>___<tool>`; the agent identity uses Foundry User. GA label still open |
+| V8 | Foundry IQ GA status. Knowledge-base MCP `api-version=2026-11-01-preview`. `RemoteTool` connection (preview) | §4.4 | Knowledge base created and indexed; retrieval through its MCP endpoint worked. GA still open |
+| V9 | `gpt-5.6-luna`, the main and memory deployments: availability in Canada Central (or Data Zone), structured outputs, and vision for luna | §2, Q2 | Canada Central offers these models as Global Standard only; structured output works (memory non-strict, document strict); luna vision not tested yet |
+| V10 | Agent guardrails (preview): tool response intervention point and XPIA on MCP results | §14 | Policies attached to the deployments; the agent intervention points act only on agent-attached policies (not active) |
+| V11 | A2UI 1.0 support in the chosen React/web renderer (Google's 1.0 post says some platform renderers are still on 0.9.1 with 1.0 "coming soon"; Lit/web-core samples show 1.0), and the basic catalog's validation function names | §7 | — |
+| V12 | Front Door passes SSE unbuffered with compression off. Origin response timeout is long enough for long turns | §9 | SSE streamed through Front Door in the smoke test and the browser |
+| V13 | Hosted agent outbound reach and egress allow-list behaviour in a private-network project | §12 | The agent reached the toolbox, Foundry IQ, Cosmos and App Insights with egress in Audit mode |
+| V14 | Hosted agent pricing (vCPU-hour, GiB-hour) and Foundry IQ pricing, for the cost per quote | §17 | — |
+| V15 | Whether `get_openai_client(agent_name=...)` needs `allow_preview=True` (used by the BFF for the document agent) | §4.3 | — |
+| V16 | The chosen renderer can host `AssignmentBoard` drag and drop on iOS Safari and Android Chrome (pointer events, auto-scroll while dragging), with tap and keyboard alternatives that meet WCAG 2.2 "Dragging Movements" (2.5.7) | §7.2, D17 | — |
+| V17 | Desjardins brand assets (official logo SVG, colours, font licence) and the brand team's approval, before any external showing | §7.5, D12 | — |
+
+---
+
+## 19. As deployed (first dev deployment, 2026-11-25)
+
+The design was deployed once to a dev environment in Canada Central with the solution in `solution/` (Terraform in `solution/infra/terraform`, the Foundry data plane in `solution/deploy`). Everything above already reflects it; this section lists what the deployment decided or changed, in one place. The fixes, with their symptoms, are in [`solution/docs/deployment.md`](solution/docs/deployment.md) ("Lessons from the first dev deploy").
+
+| Area | As deployed |
+|---|---|
+| Models (Q2) | GPT-5.6 family from `solution/settings.yaml`, the one file for each agent's model, thinking level (`reasoning_effort`) and structured-output schema. Global Standard in Canada Central |
+| Content safety | Guardrails on the deployments. Sexual on customer input annotates only on the chat models (the *soumission* false positive), by decision of the product owner |
+| Region | Canada Central, except Cosmos in Canada East (subscription capacity) |
+| Identity | MCP app registrations with tenant-scoped URIs, v2 tokens and owners; the MCP servers accept the URI and the client id as audience |
+| Toolbox | Reaches the internal Container Apps MCP servers; `<label>___<tool>` names; A2UI resources pass through; injected arguments hidden from the model through a fresh schema copy per call |
+| Turn mechanics | Reply held by the BFF until `memory.result`; non-strict memory output, validated; the batch decides termination together, with one corrective completion after a failed call |
+| Consent | Personal-data fields left out of forms until consent; full-form mode asks consent through the BFF action `consent_yes`, then the double confirmation opens the form |
+| Front Door | Private Link approvals, then the routes re-saved before they served |
+| Hand-off | Stored in Cosmos `handoffs` only: deliberately unconnected (Q7) |
+| Not yet verified live | The full Gather and Advise journey with the real model (forms, documents, offers, hand-off), luna vision on real photos, the egress policy in `Enforced` mode, and the CI/CD pipelines on GitHub (no Azure credentials configured) |

@@ -54,7 +54,7 @@ Resource names follow `locals.tf`: `<type>-<workload>-<env>-<cc|ce>`, for exampl
 | Component | Runs as | Built from | Port | Identity | Data it owns |
 |---|---|---|---|---|---|
 | `web` | Container app, 1–2 replicas (prod 1–5), only with `deploy_web = true` | `web/Dockerfile` (nginx, non-root) | 8080 | `id-web-…` (AcrPull only) | none |
-| `bff` | Container app, session affinity, 1–3 replicas (prod 2–20) | `bff/Dockerfile` | 8000 | `id-bff-…` | Cosmos `sessions`, `events`, `state_changes`, `quotes`, `confirmations`, `handoffs`; Blob `uploads` |
+| `bff` | Container app, no session affinity (canary needs multiple revisions), 1–3 replicas (prod 2–20) | `bff/Dockerfile` | 8000 | `id-bff-…` | Cosmos `sessions`, `events`, `state_changes`, `quotes`, `confirmations`, `handoffs`; Blob `uploads` |
 | `mcp-quoting` | Container app, **1 replica** (quotes are in memory) | `mcp/quoting/Dockerfile` | 8101 | `id-mcp-quoting-…` | reads Cosmos `sessions`; quote ids and versions in `InMemoryQuoteStore` |
 | `mcp-a2ui` | Container app, 1–2 replicas (prod 1–10) | `mcp/a2ui/Dockerfile` | 8102 | `id-mcp-a2ui-…` (AcrPull only) | none (the catalog is in the image) |
 | `quote-agent` | Foundry hosted agent, invocations protocol, 1 vCPU / 2 GiB per session | source zip from `agents/quote-agent/deploy/deploy_quote_agent.py` (the Dockerfile is for local and e2e runs only) | 8088 in the hosted runtime | Entra agent identity (`instance_identity`), created by the first deploy | Cosmos `agent_history` |
@@ -137,7 +137,7 @@ sequenceDiagram
   BFF->>A: POST project/agents/quote-agent/endpoint/protocols/invocations, Entra token
   A-->>BFF: SSE turn.started
   par memory agent
-    A->>M: completion 1, strict JSON
+    A->>M: completion 1, JSON (non-strict, validated)
     A-->>BFF: SSE memory.result
   and main agent
     A->>M: completion 2, streamed
